@@ -1,0 +1,139 @@
+# macOS System Files
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+Icon?
+
+# Thumbnails and metadata files
+._*
+
+# Files that might appear in the root of a volume
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# macOS Finder preferences
+.localized
+
+# Windows system files (in case of cross-platform development)
+Thumbs.db
+Desktop.ini
+
+# Temporary files and logs
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-*
+.atom/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Node.js (if any JavaScript utilities are added)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Archive files (unless intentionally distributed)
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Personal/sensitive files
+*.key
+*.pem
+*.p12
+*.cer
+config.json
+secrets.json
+.env.local
+.env.production
+
+# Testing and development
+test_output/
+screenshots/
+debug/
+
+# Compiled AppleScript applications (keep .app bundles but ignore build artifacts)
+# Note: We KEEP .app bundles and .workflow bundles as they contain signed code
+# *.app  # DO NOT uncomment this - we want to keep signed .app files
+# *.workflow  # DO NOT uncomment this - we want to keep signed .workflow files
+
+# However, we can ignore some build artifacts if they exist
+*.scpt.bak
+*.applescript.bak
+
+# FFmpeg output files (temporary)
+ffmpeg_*.log
+*.ffmpeg.log
+
+# Image processing temporary files
+resized_*
+converted_*
+temp_images/
+temp_videos/
+
+# Annotation temporary files
+temp_annotations/
+*.xml.bak
+
+# macOS Quick Look cache
+.qlCache/
