@@ -28,7 +28,7 @@
 	<key>CFBundleExecutable</key>
 	<string>VideoTools</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.johnslaughter.VideoTools</string>
+	<string>com.UBSAnalytics.VideoTools</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

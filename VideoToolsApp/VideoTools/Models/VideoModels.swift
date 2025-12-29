@@ -74,6 +74,7 @@ struct VideoFile: Identifiable, Hashable {
     let url: URL
     var customFPS: Double?
     var customSampleRate: SampleRate?
+    var metadata: VideoMetadata?
     
     var filename: String { url.lastPathComponent }
     var path: String { url.path }
