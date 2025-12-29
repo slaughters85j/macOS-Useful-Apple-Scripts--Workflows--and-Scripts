@@ -3,26 +3,31 @@
 <plist version="1.0">
 <dict>
 	<key>files</key>
-	<dict/>
+	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<data>
+		zcc1zvDX33ymLHZyHWyxVrWySTo=
+		</data>
+		<key>Resources/Assets.car</key>
+		<data>
+		sq90DwiwnD6r6G0ew+S6RdrUtm4=
+		</data>
+	</dict>
 	<key>files2</key>
 	<dict>
-		<key>MacOS/VideoTools.debug.dylib</key>
+		<key>Resources/AppIcon.icns</key>
 		<dict>
-			<key>cdhash</key>
+			<key>hash2</key>
 			<data>
-			SnpZzloUKJJP2mKrywDWio4ZukQ=
+			HZ7mBupJGlx6J4XarDD9Ni0l0FbfSBmpMf2zuSUFrb0=
 			</data>
-			<key>requirement</key>
-			<string>identifier "VideoTools.debug" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: John Saunders (NCVAUFTZST)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */</string>
 		</dict>
-		<key>MacOS/__preview.dylib</key>
+		<key>Resources/Assets.car</key>
 		<dict>
-			<key>cdhash</key>
+			<key>hash2</key>
 			<data>
-			hXvG31KwT9NY+ySdD900OstVyy8=
+			69E0iPB3XtHYpIA6Ppj//exO/Y/iC7ZPGuc2n/PgfcY=
 			</data>
-			<key>requirement</key>
-			<string>identifier "__preview" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: John Saunders (NCVAUFTZST)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */</string>
 		</dict>
 	</dict>
 	<key>rules</key>
