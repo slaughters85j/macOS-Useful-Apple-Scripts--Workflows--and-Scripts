@@ -12,6 +12,14 @@
 		<data>
 		sq90DwiwnD6r6G0ew+S6RdrUtm4=
 		</data>
+		<key>Resources/video_audio_separator_batch.py</key>
+		<data>
+		DLwmqau5hB214VfzZrrqjrrmDcY=
+		</data>
+		<key>Resources/video_splitter_batch.py</key>
+		<data>
+		b48FG4WOL+CkTSvSZXzPZib8ukw=
+		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
@@ -27,6 +35,20 @@
 			<key>hash2</key>
 			<data>
 			69E0iPB3XtHYpIA6Ppj//exO/Y/iC7ZPGuc2n/PgfcY=
+			</data>
+		</dict>
+		<key>Resources/video_audio_separator_batch.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			5eZIEs7z0mthg6hq5NKek2Huv6IoDhEbZnXuK0vmObs=
+			</data>
+		</dict>
+		<key>Resources/video_splitter_batch.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			PVPveOrJXjJC8s7siNR3c2z/k2zGtBRxCi1VsKqwrpE=
 			</data>
 		</dict>
 	</dict>

@@ -1,8 +1,6 @@
 import Foundation
 
 actor PythonRunner {
-    private let pythonPath = "/Users/system-backup/miniforge3/bin/python"
-    private let scriptsBasePath = "/Users/system-backup/Library/Mobile Documents/com~apple~ScriptEditor2/Documents/Photo & Video Management"
     
     private var currentProcess: Process?
     
@@ -100,7 +98,8 @@ actor PythonRunner {
         config: T,
         onEvent: @escaping @Sendable (PythonEvent) -> Void
     ) async throws {
-        let scriptPath = (scriptsBasePath as NSString).appendingPathComponent(script.filename)
+        let pythonPath = try findPython()
+        let scriptPath = try findScript(script)
         
         let process = Process()
         process.executableURL = URL(fileURLWithPath: pythonPath)
@@ -136,15 +135,103 @@ actor PythonRunner {
             throw PythonRunnerError.processExitedWithError(Int(process.terminationStatus))
         }
     }
+    
+    private func findPython() throws -> String {
+        // Check user preference first
+        if let userPath = UserDefaults.standard.string(forKey: "pythonPath"),
+           FileManager.default.isExecutableFile(atPath: userPath) {
+            return userPath
+        }
+        
+        // Common Python locations
+        let candidates = [
+            // Miniforge/Conda
+            NSHomeDirectory() + "/miniforge3/bin/python",
+            NSHomeDirectory() + "/miniconda3/bin/python",
+            NSHomeDirectory() + "/anaconda3/bin/python",
+            "/opt/homebrew/anaconda3/bin/python",
+            "/opt/anaconda3/bin/python",
+            // Homebrew
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            // System
+            "/usr/bin/python3"
+        ]
+        
+        for path in candidates {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        
+        // Try using 'which' as fallback
+        let whichProcess = Process()
+        whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+        whichProcess.arguments = ["python3"]
+        let pipe = Pipe()
+        whichProcess.standardOutput = pipe
+        
+        try? whichProcess.run()
+        whichProcess.waitUntilExit()
+        
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !path.isEmpty,
+           FileManager.default.isExecutableFile(atPath: path) {
+            return path
+        }
+        
+        throw PythonRunnerError.pythonNotFound
+    }
+    
+    private func findScript(_ script: Script) throws -> String {
+        // Check user preference first
+        if let userPath = UserDefaults.standard.string(forKey: "scriptsPath") {
+            let scriptPath = (userPath as NSString).appendingPathComponent(script.filename)
+            if FileManager.default.fileExists(atPath: scriptPath) {
+                return scriptPath
+            }
+        }
+        
+        // Check in app bundle Resources
+        if let bundlePath = Bundle.main.path(forResource: script.filename.replacingOccurrences(of: ".py", with: ""), ofType: "py") {
+            return bundlePath
+        }
+        
+        // Check common locations
+        let candidates = [
+            // iCloud Scripts folder
+            NSHomeDirectory() + "/Library/Mobile Documents/com~apple~ScriptEditor2/Documents/Photo & Video Management",
+            // Same directory as app
+            Bundle.main.bundlePath + "/../Scripts",
+            // User's home scripts
+            NSHomeDirectory() + "/Scripts/VideoTools"
+        ]
+        
+        for basePath in candidates {
+            let scriptPath = (basePath as NSString).appendingPathComponent(script.filename)
+            if FileManager.default.fileExists(atPath: scriptPath) {
+                return scriptPath
+            }
+        }
+        
+        throw PythonRunnerError.scriptNotFound(script.filename)
+    }
 }
 
 enum PythonRunnerError: Error, LocalizedError {
     case processExitedWithError(Int)
+    case pythonNotFound
+    case scriptNotFound(String)
     
     var errorDescription: String? {
         switch self {
         case .processExitedWithError(let code):
             return "Python process exited with code \(code)"
+        case .pythonNotFound:
+            return "Python not found. Install Python 3 or set the path in Settings."
+        case .scriptNotFound(let name):
+            return "Script '\(name)' not found. Ensure scripts are in the app bundle or set the path in Settings."
         }
     }
 }

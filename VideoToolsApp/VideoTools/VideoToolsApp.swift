@@ -14,5 +14,9 @@ struct VideoToolsApp: App {
         .commands {
             CommandGroup(replacing: .newItem) { }
         }
+        
+        Settings {
+            SettingsView()
+        }
     }
 }
