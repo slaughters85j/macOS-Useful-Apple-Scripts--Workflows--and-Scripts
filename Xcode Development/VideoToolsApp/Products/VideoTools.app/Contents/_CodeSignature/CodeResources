@@ -20,6 +20,14 @@
 		<data>
 		b48FG4WOL+CkTSvSZXzPZib8ukw=
 		</data>
+		<key>Resources/video_to_gif.cpython-314.pyc</key>
+		<data>
+		+koeI7PRTXxopoKvwV/rFtA0AVg=
+		</data>
+		<key>Resources/video_to_gif.py</key>
+		<data>
+		HqmTyf/lOzRzD7knmNXWsi5s0aE=
+		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
@@ -49,6 +57,20 @@
 			<key>hash2</key>
 			<data>
 			PVPveOrJXjJC8s7siNR3c2z/k2zGtBRxCi1VsKqwrpE=
+			</data>
+		</dict>
+		<key>Resources/video_to_gif.cpython-314.pyc</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			XA/NrwKOFlJ9yYkGJ9OwEPXal9S562XXsw70DfuTCDA=
+			</data>
+		</dict>
+		<key>Resources/video_to_gif.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			pQB8cHcOTeMclorZ+fWzsMX24Ysxxl8/I4cdjA0aZYk=
 			</data>
 		</dict>
 	</dict>
