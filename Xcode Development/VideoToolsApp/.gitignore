@@ -1,4 +1,5 @@
 .claude/*
+.DS_Store
 contents.xcworkspacedata
 UserInterfaceState.xcuserstate
 xcuserdata/*
