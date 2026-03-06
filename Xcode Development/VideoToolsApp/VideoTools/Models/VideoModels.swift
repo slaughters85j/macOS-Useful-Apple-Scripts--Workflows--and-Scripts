@@ -102,6 +102,20 @@ enum SampleRateMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum AudioChannelMode: Int, CaseIterable, Identifiable {
+    case stereo = 2
+    case mono = 1
+
+    var id: Int { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .stereo: return "Stereo (2ch)"
+        case .mono: return "Mono (1ch)"
+        }
+    }
+}
+
 enum SampleRate: Int, CaseIterable, Identifiable {
     case hz48000 = 48000
     case hz44100 = 44100

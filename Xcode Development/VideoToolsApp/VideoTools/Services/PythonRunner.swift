@@ -35,11 +35,12 @@ actor PythonRunner {
     struct SeparatorConfig: Encodable {
         let files: [String]
         let config: SeparatorSettings
-        
+
         struct SeparatorSettings: Encodable {
             let sample_rate_mode: String
             let sample_rate: Int
             let sample_rates: [String: Int]
+            let audio_channels: Int
             let parallel_jobs: Int
         }
     }
@@ -74,6 +75,7 @@ actor PythonRunner {
         sampleRateMode: String,
         sampleRate: Int,
         sampleRates: [String: Int],
+        audioChannels: Int,
         parallelJobs: Int,
         onEvent: @escaping @Sendable (PythonEvent) -> Void
     ) async throws {
@@ -83,6 +85,7 @@ actor PythonRunner {
                 sample_rate_mode: sampleRateMode,
                 sample_rate: sampleRate,
                 sample_rates: sampleRates,
+                audio_channels: audioChannels,
                 parallel_jobs: parallelJobs
             )
         )

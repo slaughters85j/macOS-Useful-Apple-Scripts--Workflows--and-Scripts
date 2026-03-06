@@ -165,18 +165,20 @@ def extract_video_stream(args: tuple) -> dict:
 
 def extract_audio_stream(args: tuple) -> dict:
     """Extract audio stream as WAV from a video file."""
-    (video_path, output_file, sample_rate, ffmpeg_path, file_id) = args
-    
+    (video_path, output_file, sample_rate, audio_channels, ffmpeg_path, file_id) = args
+
+    ac_args = ['-ac', str(audio_channels)] if audio_channels else []
+
     # Try multiple extraction methods
     methods = [
         # Method 1: Standard PCM
         [ffmpeg_path, '-y', '-analyzeduration', '100M', '-probesize', '100M',
-         '-i', video_path, '-vn', '-acodec', 'pcm_s16le', '-ar', str(sample_rate), output_file],
+         '-i', video_path, '-vn', '-acodec', 'pcm_s16le', '-ar', str(sample_rate)] + ac_args + [output_file],
         # Method 2: Float PCM
-        [ffmpeg_path, '-y', '-i', video_path, '-vn', '-acodec', 'pcm_f32le', 
-         '-ar', str(sample_rate), output_file],
+        [ffmpeg_path, '-y', '-i', video_path, '-vn', '-acodec', 'pcm_f32le',
+         '-ar', str(sample_rate)] + ac_args + [output_file],
         # Method 3: Format auto-detect
-        [ffmpeg_path, '-y', '-f', 'mp4', '-i', video_path, '-vn', '-f', 'wav', output_file],
+        [ffmpeg_path, '-y', '-f', 'mp4', '-i', video_path, '-vn', '-f', 'wav'] + ac_args + [output_file],
     ]
     
     for cmd in methods:
@@ -213,49 +215,49 @@ def extract_audio_stream(args: tuple) -> dict:
 
 def process_single_file(args: tuple) -> dict:
     """Process a single video file - extract both video and audio streams."""
-    (video_path, sample_rate, ffmpeg_path, use_videotoolbox) = args
-    
+    (video_path, sample_rate, audio_channels, ffmpeg_path, use_videotoolbox) = args
+
     file_id = Path(video_path).name
-    
+
     # Probe video
     info = probe_video(video_path, ffmpeg_path)
     if not info:
         return {"success": False, "file": file_id, "error": "Failed to probe video"}
-    
+
     # Setup output directory
     input_dir = os.path.dirname(os.path.abspath(video_path)) or '.'
     input_name = Path(video_path).stem
     output_dir = os.path.join(input_dir, f"{input_name}_separated")
     os.makedirs(output_dir, exist_ok=True)
-    
+
     video_output = os.path.join(output_dir, f"{input_name}_video.mp4")
     audio_output = os.path.join(output_dir, f"{input_name}_audio.wav")
-    
+
     encoder = 'h264_videotoolbox' if use_videotoolbox else 'libx264'
-    
+
     results = {"file": file_id, "output_dir": output_dir, "video": None, "audio": None}
-    
+
     # Extract video
     video_result = extract_video_stream((
-        video_path, video_output, info['frame_rate'], info['bit_rate'], 
+        video_path, video_output, info['frame_rate'], info['bit_rate'],
         encoder, ffmpeg_path, file_id
     ))
     results["video"] = video_result
-    
+
     # Extract audio if present
     if info['has_audio']:
         audio_result = extract_audio_stream((
-            video_path, audio_output, sample_rate, ffmpeg_path, file_id
+            video_path, audio_output, sample_rate, audio_channels, ffmpeg_path, file_id
         ))
         results["audio"] = audio_result
     else:
         results["audio"] = {"success": True, "skipped": True, "reason": "No audio stream"}
-    
+
     results["success"] = (
-        results["video"]["success"] and 
+        results["video"]["success"] and
         (results["audio"].get("success", False) or results["audio"].get("skipped", False))
     )
-    
+
     return results
 
 
@@ -280,6 +282,7 @@ def run_batch(config: dict):
     sample_rate_mode = settings.get("sample_rate_mode", "single")
     sample_rate = settings.get("sample_rate", 48000)
     sample_rates = settings.get("sample_rates", {})
+    audio_channels = settings.get("audio_channels", 2)  # 1=mono, 2=stereo
     parallel_jobs = settings.get("parallel_jobs", 4)
     
     # Validate files
@@ -319,7 +322,7 @@ def run_batch(config: dict):
         else:
             file_sample_rate = sample_rate
         
-        tasks.append((video_path, file_sample_rate, ffmpeg_path, use_videotoolbox))
+        tasks.append((video_path, file_sample_rate, audio_channels, ffmpeg_path, use_videotoolbox))
     
     results = []
     

@@ -28,7 +28,28 @@ struct SeparatorSettingsView: View {
             }
             
             Divider()
-            
+
+            sectionHeader("Audio Channels", icon: "speaker.wave.2")
+
+            Picker("Channels", selection: $state.audioChannelMode) {
+                ForEach(AudioChannelMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if appState.audioChannelMode == .mono {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.blue)
+                    Text("Stereo audio will be downmixed to mono.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Divider()
+
             sectionHeader("Output", icon: "folder")
             
             VStack(alignment: .leading, spacing: 8) {

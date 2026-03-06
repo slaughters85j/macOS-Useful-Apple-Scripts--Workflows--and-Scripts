@@ -22,7 +22,8 @@ final class AppState {
     // Separator settings
     var sampleRateMode: SampleRateMode = .single
     var sampleRate: SampleRate = .hz48000
-    
+    var audioChannelMode: AudioChannelMode = .stereo
+
     // Rename settings
     var renameVideoFolder: RenameFolder?
     var renamePhotoFolder: RenameFolder?

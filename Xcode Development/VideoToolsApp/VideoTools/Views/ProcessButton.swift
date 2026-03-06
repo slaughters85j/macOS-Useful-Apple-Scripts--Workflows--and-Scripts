@@ -154,6 +154,7 @@ struct ProcessButton: View {
             sampleRateMode: appState.sampleRateMode == .single ? "single" : "per_file",
             sampleRate: appState.sampleRate.rawValue,
             sampleRates: sampleRates,
+            audioChannels: appState.audioChannelMode.rawValue,
             parallelJobs: appState.parallelJobs
         ) { event in
             Task { @MainActor in
