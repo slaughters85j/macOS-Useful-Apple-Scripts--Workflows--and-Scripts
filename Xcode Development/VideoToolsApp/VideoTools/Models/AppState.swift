@@ -18,7 +18,11 @@ final class AppState {
     var splitDurationUnit: DurationUnit = .seconds
     var fpsMode: FPSMode = .single
     var fpsValue: Double = 30
-    
+    var outputCodec: OutputCodec = .copy
+    var qualityMode: QualityMode = .quality
+    var qualityValue: Double = 65   // VideoToolbox -q:v scale (0-100, higher=better)
+    var outputFolderMode: OutputFolderMode = .perFile
+
     // Separator settings
     var sampleRateMode: SampleRateMode = .single
     var sampleRate: SampleRate = .hz48000

@@ -91,14 +91,59 @@ enum DurationUnit: String, CaseIterable, Identifiable {
 enum FPSMode: String, CaseIterable, Identifiable {
     case single = "Same for All"
     case perFile = "Per File"
-    
+
     var id: String { rawValue }
+}
+
+enum OutputCodec: String, CaseIterable, Identifiable {
+    case copy = "Keep Original"
+    case h264 = "H.264"
+    case hevc = "HEVC (H.265)"
+
+    var id: String { rawValue }
+
+    /// Value sent to Python script config JSON
+    var configValue: String {
+        switch self {
+        case .copy: return "copy"
+        case .h264: return "h264"
+        case .hevc: return "hevc"
+        }
+    }
+}
+
+enum QualityMode: String, CaseIterable, Identifiable {
+    case quality = "Quality (VBR)"
+    case matchBitrate = "Match Source Bitrate"
+
+    var id: String { rawValue }
+
+    var configValue: String {
+        switch self {
+        case .quality: return "quality"
+        case .matchBitrate: return "match_bitrate"
+        }
+    }
+}
+
+enum OutputFolderMode: String, CaseIterable, Identifiable {
+    case perFile = "Per-File Subfolder"
+    case alongside = "Alongside Source"
+
+    var id: String { rawValue }
+
+    var configValue: String {
+        switch self {
+        case .perFile: return "per_file"
+        case .alongside: return "alongside"
+        }
+    }
 }
 
 enum SampleRateMode: String, CaseIterable, Identifiable {
     case single = "Same for All"
     case perFile = "Per File"
-    
+
     var id: String { rawValue }
 }
 

@@ -29,6 +29,10 @@ actor PythonRunner {
             let fps_value: Double
             let fps_values: [String: Double]
             let parallel_jobs: Int
+            let output_codec: String
+            let quality_mode: String
+            let quality_value: Double
+            let output_folder_mode: String
         }
     }
     
@@ -53,6 +57,10 @@ actor PythonRunner {
         fpsValue: Double,
         fpsValues: [String: Double],
         parallelJobs: Int,
+        outputCodec: String,
+        qualityMode: String,
+        qualityValue: Double,
+        outputFolderMode: String,
         onEvent: @escaping @Sendable (PythonEvent) -> Void
     ) async throws {
         let config = SplitterConfig(
@@ -63,7 +71,11 @@ actor PythonRunner {
                 fps_mode: fpsMode,
                 fps_value: fpsValue,
                 fps_values: fpsValues,
-                parallel_jobs: parallelJobs
+                parallel_jobs: parallelJobs,
+                output_codec: outputCodec,
+                quality_mode: qualityMode,
+                quality_value: qualityValue,
+                output_folder_mode: outputFolderMode
             )
         )
         

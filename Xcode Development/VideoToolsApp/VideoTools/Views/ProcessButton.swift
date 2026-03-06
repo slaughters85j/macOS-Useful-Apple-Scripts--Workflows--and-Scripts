@@ -128,7 +128,11 @@ struct ProcessButton: View {
             fpsMode: appState.fpsMode == .single ? "single" : "per_file",
             fpsValue: appState.fpsValue,
             fpsValues: fpsValues,
-            parallelJobs: appState.parallelJobs
+            parallelJobs: appState.parallelJobs,
+            outputCodec: appState.outputCodec.configValue,
+            qualityMode: appState.qualityMode.configValue,
+            qualityValue: appState.qualityValue,
+            outputFolderMode: appState.outputFolderMode.configValue
         ) { event in
             Task { @MainActor in
                 handleEvent(event)
