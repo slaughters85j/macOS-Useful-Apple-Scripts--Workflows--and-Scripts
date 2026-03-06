@@ -1,26 +1,74 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Tool Mode Groups
+
+enum ToolModeGroup: String, CaseIterable {
+    case videoProcessing = "Video Processing"
+    case fileManagement = "File Management"
+    case inspection = "Inspection"
+}
+
 enum ToolMode: String, CaseIterable, Identifiable {
-    case split = "Split Video"
-    case separate = "Separate Audio/Video"
-    case gif = "Create GIF"
-    
+    case split = "Split"
+    case separate = "Separate A/V"
+    case gif = "GIF"
+    case renameVideos = "Rename Videos"
+    case renamePhotos = "Rename Photos"
+    case metadata = "Metadata"
+
     var id: String { rawValue }
-    
+
     var icon: String {
         switch self {
         case .split: return "scissors"
         case .separate: return "arrow.triangle.branch"
         case .gif: return "photo.on.rectangle"
+        case .renameVideos: return "film.stack"
+        case .renamePhotos: return "photo.stack"
+        case .metadata: return "info.circle"
         }
     }
-    
+
     var description: String {
         switch self {
         case .split: return "Split videos into segments by duration or count"
         case .separate: return "Extract video and audio streams into separate files"
         case .gif: return "Convert video clips to animated GIFs"
+        case .renameVideos: return "Batch rename video files using folder name prefix"
+        case .renamePhotos: return "Batch rename image files using folder name prefix"
+        case .metadata: return "Inspect detailed video metadata"
+        }
+    }
+
+    var group: ToolModeGroup {
+        switch self {
+        case .split, .separate, .gif: return .videoProcessing
+        case .renameVideos, .renamePhotos: return .fileManagement
+        case .metadata: return .inspection
+        }
+    }
+
+    var isFolderBased: Bool {
+        switch self {
+        case .renameVideos, .renamePhotos: return true
+        default: return false
+        }
+    }
+
+    var isProcessable: Bool {
+        switch self {
+        case .metadata: return false
+        default: return true
+        }
+    }
+
+    /// File extensions this mode operates on (for folder-based modes)
+    var supportedExtensions: Set<String> {
+        switch self {
+        case .renameVideos: return ["mp4", "mov", "avi", "mkv", "m4v", "flv", "wmv"]
+        case .renamePhotos: return ["png", "jpg", "jpeg", "tiff", "gif"]
+        default: return []
         }
     }
 }
@@ -190,11 +238,94 @@ struct FileProgress: Identifiable {
     var segmentsCompleted: Int
     var segmentsTotal: Int
     var outputDir: String?
-    
+
     enum FileStatus {
         case pending
         case processing
         case completed
         case error(String)
     }
+}
+
+// MARK: - Rename Models
+
+enum RenameFolderAlert: Identifiable {
+    case noMatchingFiles(message: String)
+    case wrongFileType(message: String)
+
+    var id: String {
+        switch self {
+        case .noMatchingFiles: return "noMatch"
+        case .wrongFileType: return "wrongType"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .noMatchingFiles: return "No Matching Files"
+        case .wrongFileType: return "Wrong File Type"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .noMatchingFiles(let msg), .wrongFileType(let msg):
+            return msg
+        }
+    }
+}
+
+enum RenameSortOrder: String, CaseIterable, Identifiable {
+    case byName = "Name"
+    case byDateModified = "Date Modified"
+    case byDateCreated = "Date Created"
+    case bySize = "Size"
+
+    var id: String { rawValue }
+}
+
+struct RenameFileEntry: Identifiable {
+    let id = UUID()
+    let originalURL: URL
+    let originalName: String
+    var proposedName: String
+    var status: RenameFileStatus = .pending
+
+    var fileExtension: String { originalURL.pathExtension.lowercased() }
+
+    enum RenameFileStatus: Equatable {
+        case pending
+        case renamed
+        case collision
+        case error(String)
+    }
+}
+
+struct RenameFolder {
+    let url: URL
+    var discoveredFiles: [RenameFileEntry] = []
+
+    var name: String { url.lastPathComponent }
+}
+
+// MARK: - Metadata Model
+
+struct MetadataFile: Identifiable {
+    let id = UUID()
+    let url: URL
+    var metadata: VideoMetadata?
+    var fileSize: Int64?
+    var isLoading: Bool = true
+
+    var filename: String { url.lastPathComponent }
+    var path: String { url.path }
+}
+
+/// Extended metadata fields parsed from ffprobe
+struct ExtendedVideoMetadata {
+    var pixelFormat: String?
+    var codecProfile: String?
+    var colorSpace: String?
+    var bitDepth: Int?
+    var audioBitRate: Int?
 }

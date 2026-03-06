@@ -2,13 +2,32 @@ import SwiftUI
 
 struct ProcessButton: View {
     @Environment(AppState.self) private var appState
-    
+
     private let runner = PythonRunner()
-    
+    private let renamer = FileRenamer()
+
+    private var buttonLabel: String {
+        switch appState.selectedMode {
+        case .renameVideos, .renamePhotos: return "Rename"
+        default: return "Process"
+        }
+    }
+
+    private var buttonIcon: String {
+        switch appState.selectedMode {
+        case .renameVideos, .renamePhotos: return "pencil.line"
+        default: return "play.fill"
+        }
+    }
+
     var body: some View {
+        @Bindable var state = appState
+
         Button {
             if appState.processingStatus == .running {
                 Task { await runner.cancel() }
+            } else if appState.selectedMode.isFolderBased {
+                appState.showRenameConfirmation = true
             } else {
                 Task { await startProcessing() }
             }
@@ -18,8 +37,8 @@ struct ProcessButton: View {
                     Image(systemName: "stop.fill")
                     Text("Cancel")
                 } else {
-                    Image(systemName: "play.fill")
-                    Text("Process")
+                    Image(systemName: buttonIcon)
+                    Text(buttonLabel)
                 }
             }
             .frame(minWidth: 100)
@@ -27,21 +46,33 @@ struct ProcessButton: View {
         .buttonStyle(.borderedProminent)
         .controlSize(.large)
         .disabled(!appState.canProcess && appState.processingStatus != .running)
+        .alert("Confirm Rename", isPresented: $state.showRenameConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Rename", role: .destructive) {
+                Task { await startProcessing() }
+            }
+        } message: {
+            let count = appState.activeRenameFolder?.discoveredFiles.count ?? 0
+            Text("Rename \(count) file\(count == 1 ? "" : "s")? This cannot be undone.")
+        }
     }
     
     @MainActor
     private func startProcessing() async {
         appState.processingStatus = .running
         appState.fileProgress = [:]
-        
-        for file in appState.videoFiles {
-            appState.fileProgress[file.filename] = FileProgress(
-                id: file.filename,
-                status: .pending,
-                segmentsCompleted: 0,
-                segmentsTotal: 0,
-                outputDir: nil
-            )
+
+        // Only set up file progress tracking for video-file-based modes
+        if !appState.selectedMode.isFolderBased {
+            for file in appState.videoFiles {
+                appState.fileProgress[file.filename] = FileProgress(
+                    id: file.filename,
+                    status: .pending,
+                    segmentsCompleted: 0,
+                    segmentsTotal: 0,
+                    outputDir: nil
+                )
+            }
         }
         
         do {
@@ -52,6 +83,10 @@ struct ProcessButton: View {
                 try await runSeparator()
             case .gif:
                 try await runGifConverter()
+            case .renameVideos, .renamePhotos:
+                await runRename()
+            case .metadata:
+                break
             }
         } catch {
             appState.processingStatus = .error(error.localizedDescription)
@@ -123,6 +158,31 @@ struct ProcessButton: View {
         }
     }
     
+    @MainActor
+    private func runRename() async {
+        guard let folder = appState.activeRenameFolder else {
+            appState.processingStatus = .error("No folder selected")
+            return
+        }
+
+        let hasCollisions = folder.discoveredFiles.contains { $0.status == .collision }
+        if hasCollisions {
+            appState.processingStatus = .error("Resolve naming collisions before renaming")
+            return
+        }
+
+        let result = await renamer.performRenames(files: folder.discoveredFiles)
+        appState.processingStatus = .completed(
+            successful: result.successCount,
+            failed: result.failCount
+        )
+
+        // Refresh the folder to show updated state
+        if result.successCount > 0 {
+            appState.selectFolder(url: folder.url, forMode: appState.selectedMode)
+        }
+    }
+
     @MainActor
     private func handleEvent(_ event: PythonEvent) {
         switch event {

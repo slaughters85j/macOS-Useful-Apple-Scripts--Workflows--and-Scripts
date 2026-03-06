@@ -22,6 +22,22 @@ final class AppState {
     var sampleRateMode: SampleRateMode = .single
     var sampleRate: SampleRate = .hz48000
     
+    // Rename settings
+    var renameVideoFolder: RenameFolder?
+    var renamePhotoFolder: RenameFolder?
+    var renamePrefix: String = ""
+    var renameStartNumber: Int = 1
+    var renamePaddingWidth: Int = 6
+    var renameSortOrder: RenameSortOrder = .byName
+    var renameSortAscending: Bool = true
+    var showingFolderPicker: Bool = false
+    var showRenameConfirmation: Bool = false
+    var renameFolderAlert: RenameFolderAlert?
+
+    // Metadata settings
+    var metadataFile: MetadataFile?
+    var showingMetadataFilePicker: Bool = false
+
     // GIF settings
     var gifResolutionMode: GifResolutionMode = .scale
     var gifScalePercent: Double = 50
@@ -44,7 +60,35 @@ final class AppState {
     private let prober = VideoProber()
     
     var canProcess: Bool {
-        !videoFiles.isEmpty && processingStatus != .running
+        guard processingStatus != .running else { return false }
+        switch selectedMode {
+        case .split, .separate, .gif:
+            return !videoFiles.isEmpty
+        case .renameVideos:
+            return !(renameVideoFolder?.discoveredFiles.isEmpty ?? true)
+        case .renamePhotos:
+            return !(renamePhotoFolder?.discoveredFiles.isEmpty ?? true)
+        case .metadata:
+            return false
+        }
+    }
+
+    /// The active rename folder for the current mode
+    var activeRenameFolder: RenameFolder? {
+        get {
+            switch selectedMode {
+            case .renameVideos: return renameVideoFolder
+            case .renamePhotos: return renamePhotoFolder
+            default: return nil
+            }
+        }
+        set {
+            switch selectedMode {
+            case .renameVideos: renameVideoFolder = newValue
+            case .renamePhotos: renamePhotoFolder = newValue
+            default: break
+            }
+        }
     }
     
     func addFiles(urls: [URL]) {
@@ -79,7 +123,7 @@ final class AppState {
             }
             
             // Update trim end to video duration for GIF mode
-            if let duration = metadata?.duration, gifTrimEnd == nil {
+            if metadata?.duration != nil, gifTrimEnd == nil {
                 gifTrimEnd = nil // Keep as nil to use duration as placeholder
             }
         }
@@ -110,6 +154,164 @@ final class AppState {
         }
     }
     
+    // MARK: - Rename Operations
+
+    func selectFolder(url: URL, forMode mode: ToolMode) {
+        let extensions = mode.supportedExtensions
+        guard !extensions.isEmpty else { return }
+
+        var folder = RenameFolder(url: url)
+
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.contentModificationDateKey, .creationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        let allFiles = contents.filter { !$0.hasDirectoryPath }
+        let matchingFiles = allFiles.filter { extensions.contains($0.pathExtension.lowercased()) }
+
+        // Alert user if no matching files found
+        if matchingFiles.isEmpty {
+            let wrongTypeExts: Set<String> = mode == .renameVideos
+                ? ["png", "jpg", "jpeg", "tiff", "gif"]
+                : ["mp4", "mov", "avi", "mkv", "m4v", "flv", "wmv"]
+            let wrongTypeCount = allFiles.filter { wrongTypeExts.contains($0.pathExtension.lowercased()) }.count
+
+            if wrongTypeCount > 0 {
+                let expected = mode == .renameVideos ? "video" : "image"
+                let found = mode == .renameVideos ? "image" : "video"
+                renameFolderAlert = .wrongFileType(
+                    message: "No \(expected) files found in this folder. Found \(wrongTypeCount) \(found) file\(wrongTypeCount == 1 ? "" : "s") instead. Try the \(mode == .renameVideos ? "Rename Photos" : "Rename Videos") mode."
+                )
+            } else {
+                let expected = mode == .renameVideos ? "video" : "image"
+                let extList = extensions.map { ".\($0)" }.joined(separator: ", ")
+                renameFolderAlert = .noMatchingFiles(
+                    message: "No \(expected) files found in this folder. Looking for: \(extList)"
+                )
+            }
+            return
+        }
+
+        // Sort files
+        let sorted = sortFiles(matchingFiles, by: renameSortOrder, ascending: renameSortAscending)
+
+        // Set prefix to folder name by default
+        renamePrefix = url.lastPathComponent
+
+        // Generate entries with proposed names
+        folder.discoveredFiles = sorted.enumerated().map { index, fileURL in
+            let number = renameStartNumber + index
+            let padded = String(format: "%0\(renamePaddingWidth)d", number)
+            let ext = fileURL.pathExtension.lowercased()
+            let proposed = "\(renamePrefix)_\(padded).\(ext)"
+            return RenameFileEntry(
+                originalURL: fileURL,
+                originalName: fileURL.lastPathComponent,
+                proposedName: proposed
+            )
+        }
+
+        // Detect collisions
+        detectCollisions(in: &folder)
+
+        switch mode {
+        case .renameVideos: renameVideoFolder = folder
+        case .renamePhotos: renamePhotoFolder = folder
+        default: break
+        }
+    }
+
+    func updateRenamePreview() {
+        guard var folder = activeRenameFolder else { return }
+        let prefix = renamePrefix.isEmpty ? (folder.name) : renamePrefix
+
+        let urls = folder.discoveredFiles.map(\.originalURL)
+        let sorted = sortFiles(urls, by: renameSortOrder, ascending: renameSortAscending)
+
+        folder.discoveredFiles = sorted.enumerated().map { index, fileURL in
+            let number = renameStartNumber + index
+            let padded = String(format: "%0\(renamePaddingWidth)d", number)
+            let ext = fileURL.pathExtension.lowercased()
+            let proposed = "\(prefix)_\(padded).\(ext)"
+            return RenameFileEntry(
+                originalURL: fileURL,
+                originalName: fileURL.lastPathComponent,
+                proposedName: proposed
+            )
+        }
+
+        detectCollisions(in: &folder)
+        activeRenameFolder = folder
+    }
+
+    private func sortFiles(_ files: [URL], by order: RenameSortOrder, ascending: Bool) -> [URL] {
+        let sorted = files.sorted { a, b in
+            switch order {
+            case .byName:
+                return a.lastPathComponent.localizedStandardCompare(b.lastPathComponent) == .orderedAscending
+            case .byDateModified:
+                let dateA = (try? a.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                let dateB = (try? b.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+                return dateA < dateB
+            case .byDateCreated:
+                let dateA = (try? a.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast
+                let dateB = (try? b.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast
+                return dateA < dateB
+            case .bySize:
+                let sizeA = (try? a.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                let sizeB = (try? b.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+                return sizeA < sizeB
+            }
+        }
+        return ascending ? sorted : sorted.reversed()
+    }
+
+    private func detectCollisions(in folder: inout RenameFolder) {
+        // Check if any proposed name matches an existing file that's NOT in our rename set
+        let originalNames = Set(folder.discoveredFiles.map(\.originalName))
+        let fm = FileManager.default
+
+        for i in folder.discoveredFiles.indices {
+            let proposed = folder.discoveredFiles[i].proposedName
+            let proposedURL = folder.url.appendingPathComponent(proposed)
+
+            // Collision if: proposed name exists on disk AND it's not one of our files being renamed
+            if fm.fileExists(atPath: proposedURL.path) && !originalNames.contains(proposed) {
+                folder.discoveredFiles[i].status = .collision
+            } else {
+                folder.discoveredFiles[i].status = .pending
+            }
+        }
+    }
+
+    func clearRenameFolder() {
+        activeRenameFolder = nil
+        renamePrefix = ""
+        renameStartNumber = 1
+        processingStatus = .idle
+    }
+
+    // MARK: - Metadata Operations
+
+    func loadMetadata(url: URL) {
+        metadataFile = MetadataFile(url: url)
+        Task {
+            let metadata = await prober.probe(url: url)
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64
+            metadataFile?.metadata = metadata
+            metadataFile?.fileSize = fileSize
+            metadataFile?.isLoading = false
+            updateVersion += 1
+        }
+    }
+
+    func clearMetadata() {
+        metadataFile = nil
+    }
+
     // MARK: - GIF Config Builder
     
     func buildGifConfig() -> GifConfig {
