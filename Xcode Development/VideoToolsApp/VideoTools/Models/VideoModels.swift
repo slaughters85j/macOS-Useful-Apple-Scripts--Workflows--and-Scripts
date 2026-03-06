@@ -76,7 +76,15 @@ enum ToolMode: String, CaseIterable, Identifiable {
 enum SplitMethod: String, CaseIterable, Identifiable {
     case duration = "By Duration"
     case segments = "By Segment Count"
-    
+    case reencodeOnly = "Re-encode Only"
+
+    var id: String { rawValue }
+}
+
+enum DurationUnit: String, CaseIterable, Identifiable {
+    case seconds = "Seconds"
+    case minutes = "Minutes"
+
     var id: String { rawValue }
 }
 

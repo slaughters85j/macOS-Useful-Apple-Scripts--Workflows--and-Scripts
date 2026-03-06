@@ -106,10 +106,25 @@ struct ProcessButton: View {
             }
         }
         
+        // Re-encode only sends 1 segment (full video, no split)
+        let splitMethod: String
+        let splitValue: Double
+        switch appState.splitMethod {
+        case .duration:
+            splitMethod = "duration"
+            splitValue = appState.splitValueInSeconds
+        case .segments:
+            splitMethod = "segments"
+            splitValue = appState.splitValue
+        case .reencodeOnly:
+            splitMethod = "segments"
+            splitValue = 1
+        }
+
         try await runner.runSplitter(
             files: files,
-            splitMethod: appState.splitMethod == .duration ? "duration" : "segments",
-            splitValue: appState.splitValue,
+            splitMethod: splitMethod,
+            splitValue: splitValue,
             fpsMode: appState.fpsMode == .single ? "single" : "per_file",
             fpsValue: appState.fpsValue,
             fpsValues: fpsValues,

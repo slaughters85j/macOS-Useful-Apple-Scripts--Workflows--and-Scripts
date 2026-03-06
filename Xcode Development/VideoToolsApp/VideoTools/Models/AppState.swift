@@ -15,6 +15,7 @@ final class AppState {
     // Splitter settings
     var splitMethod: SplitMethod = .duration
     var splitValue: Double = 60
+    var splitDurationUnit: DurationUnit = .seconds
     var fpsMode: FPSMode = .single
     var fpsValue: Double = 30
     
@@ -57,6 +58,18 @@ final class AppState {
     // Parallel processing
     var parallelJobs: Int = 4
     
+    /// Split value converted to seconds for the Python script
+    var splitValueInSeconds: Double {
+        switch splitMethod {
+        case .duration:
+            return splitDurationUnit == .minutes ? splitValue * 60 : splitValue
+        case .segments:
+            return splitValue
+        case .reencodeOnly:
+            return 1 // 1 segment = full video
+        }
+    }
+
     private let prober = VideoProber()
     
     var canProcess: Bool {

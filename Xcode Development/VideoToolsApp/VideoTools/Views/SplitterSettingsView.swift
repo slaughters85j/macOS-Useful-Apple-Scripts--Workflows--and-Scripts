@@ -5,35 +5,83 @@ struct SplitterSettingsView: View {
     
     var body: some View {
         @Bindable var state = appState
-        
+
         VStack(alignment: .leading, spacing: 24) {
             sectionHeader("Split Method", icon: "scissors")
-            
+
             Picker("Method", selection: $state.splitMethod) {
                 ForEach(SplitMethod.allCases) { method in
                     Text(method.rawValue).tag(method)
                 }
             }
             .pickerStyle(.segmented)
-            
-            HStack {
-                Text(appState.splitMethod == .duration ? "Duration (seconds)" : "Number of Segments")
-                    .foregroundStyle(.secondary)
-                
-                Spacer()
-                
-                TextField(
-                    "Value",
-                    value: $state.splitValue,
-                    format: .number
-                )
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 100)
-                .multilineTextAlignment(.trailing)
+
+            switch appState.splitMethod {
+            case .duration:
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Duration")
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        TextField(
+                            "Value",
+                            value: $state.splitValue,
+                            format: .number
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 80)
+                        .multilineTextAlignment(.trailing)
+
+                        Picker("", selection: $state.splitDurationUnit) {
+                            ForEach(DurationUnit.allCases) { unit in
+                                Text(unit.rawValue).tag(unit)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 100)
+                    }
+
+                    if appState.splitDurationUnit == .minutes {
+                        Text("= \(Int(appState.splitValue * 60)) seconds per segment")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                }
+
+            case .segments:
+                HStack {
+                    Text("Number of Segments")
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    TextField(
+                        "Value",
+                        value: $state.splitValue,
+                        format: .number
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 100)
+                    .multilineTextAlignment(.trailing)
+                }
+
+            case .reencodeOnly:
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.blue)
+                    Text("The video will be re-encoded with the settings below without splitting.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(.blue.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
             }
-            
+
             Divider()
-            
+
             sectionHeader("Frame Rate", icon: "speedometer")
             
             Picker("FPS Mode", selection: $state.fpsMode) {
