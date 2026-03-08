@@ -8,12 +8,14 @@ actor PythonRunner {
         case splitter
         case separator
         case gif
-        
+        case merger
+
         var filename: String {
             switch self {
             case .splitter: return "video_splitter_batch.py"
             case .separator: return "video_audio_separator_batch.py"
             case .gif: return "video_to_gif.py"
+            case .merger: return "video_merger.py"
             }
         }
     }
@@ -110,6 +112,13 @@ actor PythonRunner {
         onEvent: @escaping @Sendable (PythonEvent) -> Void
     ) async throws {
         try await runScript(.gif, config: config, onEvent: onEvent)
+    }
+
+    func runMerger(
+        config: MergerConfig,
+        onEvent: @escaping @Sendable (PythonEvent) -> Void
+    ) async throws {
+        try await runScript(.merger, config: config, onEvent: onEvent)
     }
     
     func cancel() {

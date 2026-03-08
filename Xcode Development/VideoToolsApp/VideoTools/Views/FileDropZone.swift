@@ -61,6 +61,9 @@ struct FileDropZone: View {
             .onDelete { indexSet in
                 indexSet.forEach { appState.videoFiles.remove(at: $0) }
             }
+            .onMove { source, destination in
+                appState.moveFile(from: source, to: destination)
+            }
         }
         .listStyle(.inset)
     }
@@ -153,9 +156,21 @@ struct FileRow: View {
         }
     }
     
+    private var mergeOrderIndex: Int? {
+        guard appState.selectedMode == .merge else { return nil }
+        return appState.videoFiles.firstIndex(where: { $0.id == fileId })
+    }
+
     @ViewBuilder
     private var statusIcon: some View {
-        if let progress = progress {
+        if let index = mergeOrderIndex, progress == nil {
+            Text("\(index + 1)")
+                .font(.caption2.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Color.accentColor, in: Circle())
+        } else if let progress = progress {
             switch progress.status {
             case .pending:
                 Image(systemName: "clock")

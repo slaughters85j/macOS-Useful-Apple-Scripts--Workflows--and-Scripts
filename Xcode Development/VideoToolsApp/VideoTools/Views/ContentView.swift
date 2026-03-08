@@ -85,7 +85,7 @@ struct ContentView: View {
     private var fileListView: some View {
         VStack(spacing: 0) {
             switch appState.selectedMode {
-            case .split, .separate, .gif:
+            case .split, .separate, .gif, .merge:
                 videoFileListHeader
                 Divider()
                 FileDropZone()
@@ -191,6 +191,8 @@ struct ContentView: View {
                     SeparatorSettingsView()
                 case .gif:
                     GifSettingsView()
+                case .merge:
+                    MergerSettingsView()
                 case .renameVideos, .renamePhotos:
                     RenameSettingsView(mode: appState.selectedMode)
                 case .metadata:
@@ -221,7 +223,7 @@ struct ContentView: View {
         switch appState.processingStatus {
         case .idle:
             switch appState.selectedMode {
-            case .split, .separate, .gif:
+            case .split, .separate, .gif, .merge:
                 Label("\(appState.videoFiles.count) file(s) selected", systemImage: "film")
                     .foregroundStyle(.secondary)
             case .renameVideos, .renamePhotos:

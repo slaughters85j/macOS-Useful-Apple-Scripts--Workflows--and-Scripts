@@ -13,6 +13,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
     case split = "Split"
     case separate = "Separate A/V"
     case gif = "GIF"
+    case merge = "Merge"
     case renameVideos = "Rename Videos"
     case renamePhotos = "Rename Photos"
     case metadata = "Metadata"
@@ -24,6 +25,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
         case .split: return "scissors"
         case .separate: return "arrow.triangle.branch"
         case .gif: return "photo.on.rectangle"
+        case .merge: return "arrow.triangle.merge"
         case .renameVideos: return "film.stack"
         case .renamePhotos: return "photo.stack"
         case .metadata: return "info.circle"
@@ -35,6 +37,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
         case .split: return "Split videos into segments by duration or count"
         case .separate: return "Extract video and audio streams into separate files"
         case .gif: return "Convert video clips to animated GIFs"
+        case .merge: return "Merge multiple videos into a single output file"
         case .renameVideos: return "Batch rename video files using folder name prefix"
         case .renamePhotos: return "Batch rename image files using folder name prefix"
         case .metadata: return "Inspect detailed video metadata"
@@ -43,7 +46,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
 
     var group: ToolModeGroup {
         switch self {
-        case .split, .separate, .gif: return .videoProcessing
+        case .split, .separate, .gif, .merge: return .videoProcessing
         case .renameVideos, .renamePhotos: return .fileManagement
         case .metadata: return .inspection
         }
@@ -139,6 +142,31 @@ enum OutputFolderMode: String, CaseIterable, Identifiable {
         }
     }
 }
+
+// MARK: - Merge Settings
+
+enum MergeAspectMode: String, CaseIterable, Identifiable {
+    case letterbox = "Letterbox"
+    case cropFill = "Crop / Fill"
+
+    var id: String { rawValue }
+
+    var configValue: String {
+        switch self {
+        case .letterbox: return "letterbox"
+        case .cropFill: return "crop_fill"
+        }
+    }
+}
+
+enum MergeOutputLocation: String, CaseIterable, Identifiable {
+    case firstFile = "Same as First File"
+    case custom = "Choose Folder..."
+
+    var id: String { rawValue }
+}
+
+// MARK: - Separator Settings
 
 enum SampleRateMode: String, CaseIterable, Identifiable {
     case single = "Same for All"

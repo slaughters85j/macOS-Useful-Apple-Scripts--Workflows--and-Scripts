@@ -64,14 +64,25 @@ struct ProcessButton: View {
 
         // Only set up file progress tracking for video-file-based modes
         if !appState.selectedMode.isFolderBased {
-            for file in appState.videoFiles {
-                appState.fileProgress[file.filename] = FileProgress(
-                    id: file.filename,
+            if appState.selectedMode == .merge {
+                // Single progress entry for the merge operation
+                appState.fileProgress["merge"] = FileProgress(
+                    id: "merge",
                     status: .pending,
                     segmentsCompleted: 0,
-                    segmentsTotal: 0,
+                    segmentsTotal: appState.videoFiles.count,
                     outputDir: nil
                 )
+            } else {
+                for file in appState.videoFiles {
+                    appState.fileProgress[file.filename] = FileProgress(
+                        id: file.filename,
+                        status: .pending,
+                        segmentsCompleted: 0,
+                        segmentsTotal: 0,
+                        outputDir: nil
+                    )
+                }
             }
         }
         
@@ -83,6 +94,8 @@ struct ProcessButton: View {
                 try await runSeparator()
             case .gif:
                 try await runGifConverter()
+            case .merge:
+                try await runMerger()
             case .renameVideos, .renamePhotos:
                 await runRename()
             case .metadata:
@@ -178,6 +191,17 @@ struct ProcessButton: View {
         }
     }
     
+    @MainActor
+    private func runMerger() async throws {
+        let config = appState.buildMergeConfig()
+
+        try await runner.runMerger(config: config) { event in
+            Task { @MainActor in
+                handleEvent(event)
+            }
+        }
+    }
+
     @MainActor
     private func runRename() async {
         guard let folder = appState.activeRenameFolder else {

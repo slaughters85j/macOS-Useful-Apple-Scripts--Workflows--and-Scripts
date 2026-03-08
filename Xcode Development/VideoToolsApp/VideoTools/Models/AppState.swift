@@ -60,6 +60,16 @@ final class AppState {
     var gifTrimEnd: Double? = nil
     var gifCutSegments: [CutSegment] = []
     
+    // Merge settings
+    var mergeOutputFilename: String = "merged_output"
+    var mergeAspectMode: MergeAspectMode = .letterbox
+    var mergeOutputCodec: OutputCodec = .h264
+    var mergeQualityMode: QualityMode = .quality
+    var mergeQualityValue: Double = 65
+    var mergeFpsValue: Double = 30
+    var mergeOutputLocation: MergeOutputLocation = .firstFile
+    var mergeCustomOutputDir: URL? = nil
+
     // Parallel processing
     var parallelJobs: Int = 4
     
@@ -82,6 +92,8 @@ final class AppState {
         switch selectedMode {
         case .split, .separate, .gif:
             return !videoFiles.isEmpty
+        case .merge:
+            return videoFiles.count >= 2
         case .renameVideos:
             return !(renameVideoFolder?.discoveredFiles.isEmpty ?? true)
         case .renamePhotos:
@@ -172,6 +184,36 @@ final class AppState {
         }
     }
     
+    // MARK: - Merge Operations
+
+    func moveFile(from source: IndexSet, to destination: Int) {
+        videoFiles.move(fromOffsets: source, toOffset: destination)
+    }
+
+    func buildMergeConfig() -> MergerConfig {
+        let outputDir: String
+        if mergeOutputLocation == .custom, let customDir = mergeCustomOutputDir {
+            outputDir = customDir.path
+        } else {
+            outputDir = videoFiles.first.map {
+                URL(fileURLWithPath: $0.path).deletingLastPathComponent().path
+            } ?? "."
+        }
+
+        return MergerConfig(
+            files: videoFiles.map(\.path),
+            config: .init(
+                output_filename: mergeOutputFilename,
+                aspect_mode: mergeAspectMode.configValue,
+                output_codec: mergeOutputCodec.configValue,
+                quality_mode: mergeQualityMode.configValue,
+                quality_value: mergeQualityValue,
+                fps_value: mergeFpsValue,
+                output_dir: outputDir
+            )
+        )
+    }
+
     // MARK: - Rename Operations
 
     func selectFolder(url: URL, forMode mode: ToolMode) {
@@ -370,7 +412,7 @@ final class AppState {
 struct GifConfig: Encodable {
     let files: [String]
     let config: Settings
-    
+
     struct Settings: Encodable {
         let resolution: ResolutionConfig
         let frame_rate: Double
@@ -382,11 +424,26 @@ struct GifConfig: Encodable {
         let trim_end: Double?
         let cut_segments: [[String: Double]]
     }
-    
+
     struct ResolutionConfig: Encodable {
         let mode: String
         let scalePercent: Int?
         let width: Int?
         let height: Int?
+    }
+}
+
+struct MergerConfig: Encodable {
+    let files: [String]
+    let config: Settings
+
+    struct Settings: Encodable {
+        let output_filename: String
+        let aspect_mode: String
+        let output_codec: String
+        let quality_mode: String
+        let quality_value: Double
+        let fps_value: Double
+        let output_dir: String
     }
 }

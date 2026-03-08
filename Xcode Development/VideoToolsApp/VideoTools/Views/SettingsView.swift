@@ -251,13 +251,17 @@ struct SettingsView: View {
         
         let splitterPath = (path as NSString).appendingPathComponent("video_splitter_batch.py")
         let separatorPath = (path as NSString).appendingPathComponent("video_audio_separator_batch.py")
-        
+        let mergerPath = (path as NSString).appendingPathComponent("video_merger.py")
+
         var missing: [String] = []
         if !FileManager.default.fileExists(atPath: splitterPath) {
             missing.append("video_splitter_batch.py")
         }
         if !FileManager.default.fileExists(atPath: separatorPath) {
             missing.append("video_audio_separator_batch.py")
+        }
+        if !FileManager.default.fileExists(atPath: mergerPath) {
+            missing.append("video_merger.py")
         }
         
         isValidatingScripts = false
