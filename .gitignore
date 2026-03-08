@@ -121,6 +121,9 @@ debug/
 *.scpt.bak
 *.applescript.bak
 
+# Automator droplet binaries (macOS silently rewrites these on open/re-sign)
+**/Contents/MacOS/droplet
+
 # FFmpeg output files (temporary)
 ffmpeg_*.log
 *.ffmpeg.log
