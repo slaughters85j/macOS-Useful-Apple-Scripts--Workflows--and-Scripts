@@ -16,7 +16,11 @@ Input JSON Schema:
         "fps_mode": "single" | "per_file",
         "fps_value": 30,  // used if fps_mode is "single"
         "fps_values": {"video1.mp4": 30, "video2.mov": 24},  // used if fps_mode is "per_file"
-        "parallel_jobs": 4
+        "parallel_jobs": 4,
+        "output_codec": "copy" | "h264" | "hevc",
+        "quality_mode": "quality" | "match_bitrate",
+        "quality_value": 65,  // 0-100 scale for VideoToolbox -q:v, mapped to CRF for software
+        "output_folder_mode": "per_file" | "alongside"  // per_file = subfolder, alongside = same dir
     }
 }
 
@@ -58,10 +62,19 @@ def emit_event(event_type: EventType, **kwargs):
 
 
 def check_videotoolbox_support(ffmpeg_path: str = "ffmpeg") -> bool:
-    """Check if VideoToolbox hardware acceleration is available."""
+    """Check if VideoToolbox H.264 hardware acceleration is available."""
     try:
         result = subprocess.run([ffmpeg_path, '-encoders'], capture_output=True, text=True)
         return 'h264_videotoolbox' in result.stdout
+    except Exception:
+        return False
+
+
+def check_hevc_videotoolbox_support(ffmpeg_path: str = "ffmpeg") -> bool:
+    """Check if VideoToolbox HEVC hardware acceleration is available."""
+    try:
+        result = subprocess.run([ffmpeg_path, '-encoders'], capture_output=True, text=True)
+        return 'hevc_videotoolbox' in result.stdout
     except Exception:
         return False
 
@@ -89,13 +102,13 @@ def probe_video(video_path: str, ffmpeg_path: str) -> Optional[dict]:
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         probe = json.loads(result.stdout)
-        
+
         video_stream = next(
             (s for s in probe['streams'] if s['codec_type'] == 'video'), None
         )
         if not video_stream:
             return None
-        
+
         # Extract frame rate
         fps_str = video_stream.get('avg_frame_rate', '30/1')
         if '/' in fps_str:
@@ -103,7 +116,7 @@ def probe_video(video_path: str, ffmpeg_path: str) -> Optional[dict]:
             frame_rate = num / den if den else 30.0
         else:
             frame_rate = float(fps_str) if fps_str else 30.0
-        
+
         # Extract bit rate
         bit_rate = None
         if 'bit_rate' in video_stream:
@@ -112,7 +125,7 @@ def probe_video(video_path: str, ffmpeg_path: str) -> Optional[dict]:
             bit_rate = int(probe['format']['bit_rate'])
         else:
             bit_rate = 2_000_000  # 2 Mbps default
-        
+
         return {
             'frame_rate': frame_rate,
             'bit_rate': bit_rate,
@@ -126,42 +139,103 @@ def probe_video(video_path: str, ffmpeg_path: str) -> Optional[dict]:
         return None
 
 
+def select_encoder(output_codec: str, quality_mode: str, quality_value: float,
+                   bit_rate: int, ffmpeg_path: str) -> tuple:
+    """
+    Select encoder and build quality/bitrate flags based on codec choice.
+
+    Returns: (encoder_name: str, extra_flags: list[str], is_copy: bool)
+
+    VideoToolbox uses -q:v (0-100, higher=better quality).
+    Software fallbacks use -crf (0-51, lower=better quality).
+    CRF mapping: crf = round(51 - (quality_value * 51 / 100))
+    """
+    if output_codec == "copy":
+        return ("copy", [], True)
+
+    if output_codec == "hevc":
+        # -tag:v hvc1 is required for QuickTime/macOS compatibility in MP4 containers.
+        # Without it, ffmpeg tags as hev1 which macOS won't thumbnail or play.
+        if check_hevc_videotoolbox_support(ffmpeg_path):
+            encoder = "hevc_videotoolbox"
+            if quality_mode == "quality":
+                flags = ["-q:v", str(int(quality_value)), "-tag:v", "hvc1"]
+            else:
+                flags = ["-b:v", str(bit_rate), "-tag:v", "hvc1"]
+        else:
+            encoder = "libx265"
+            crf = round(51 - (quality_value * 51 / 100))
+            if quality_mode == "quality":
+                flags = ["-crf", str(crf), "-preset", "medium", "-tag:v", "hvc1"]
+            else:
+                flags = ["-b:v", str(bit_rate), "-preset", "medium", "-tag:v", "hvc1"]
+        return (encoder, flags, False)
+
+    # h264
+    if check_videotoolbox_support(ffmpeg_path):
+        encoder = "h264_videotoolbox"
+        if quality_mode == "quality":
+            flags = ["-q:v", str(int(quality_value))]
+        else:
+            flags = ["-b:v", str(bit_rate)]
+    else:
+        encoder = "libx264"
+        crf = round(51 - (quality_value * 51 / 100))
+        if quality_mode == "quality":
+            flags = ["-crf", str(crf), "-preset", "medium"]
+        else:
+            flags = ["-b:v", str(bit_rate), "-preset", "medium"]
+    return (encoder, flags, False)
+
+
 def split_single_segment(args: tuple) -> dict:
     """
     Split a single segment from a video. Designed to run in a separate process.
-    
+
     Args tuple contains:
-        (video_path, output_file, start_time, duration, target_fps, bit_rate, 
-         width, height, encoder, ffmpeg_path, segment_num, total_segments)
+        (video_path, output_file, start_time, duration, target_fps,
+         width, height, encoder, encoder_flags, is_copy,
+         ffmpeg_path, segment_num, total_segments, file_id)
     """
-    (video_path, output_file, start_time, duration, target_fps, bit_rate,
-     width, height, encoder, ffmpeg_path, segment_num, total_segments, file_id) = args
-    
+    (video_path, output_file, start_time, duration, target_fps,
+     width, height, encoder, encoder_flags, is_copy,
+     ffmpeg_path, segment_num, total_segments, file_id) = args
+
     try:
-        cmd = [
-            ffmpeg_path,
-            '-y',  # Overwrite output
-            '-i', video_path,
-            '-ss', str(start_time),
-            '-t', str(duration),
-            '-c:v', encoder,
-            '-r', str(target_fps),
-            '-b:v', str(bit_rate),
-            '-vf', f'scale={width}:{height}',
-        ]
-        
-        # Add encoder-specific options
-        if encoder == 'libx264':
-            cmd.extend(['-preset', 'medium'])
-        
-        cmd.extend([
-            '-c:a', 'copy',
-            '-avoid_negative_ts', '1',
-            output_file
-        ])
-        
+        if is_copy:
+            # Stream copy: -ss before -i for fast keyframe-aligned seeking
+            cmd = [
+                ffmpeg_path,
+                '-y',
+                '-ss', str(start_time),
+                '-i', video_path,
+                '-t', str(duration),
+                '-c:v', 'copy',
+                '-c:a', 'copy',
+                '-avoid_negative_ts', '1',
+                output_file
+            ]
+        else:
+            # Re-encode: -i before -ss for frame-accurate seeking
+            cmd = [
+                ffmpeg_path,
+                '-y',
+                '-i', video_path,
+                '-ss', str(start_time),
+                '-t', str(duration),
+                '-c:v', encoder,
+            ]
+            cmd.extend(encoder_flags)
+            cmd.extend([
+                '-r', str(target_fps),
+                '-vf', f'scale={width}:{height}',
+                '-c:a', 'copy',
+                '-avoid_negative_ts', '1',
+                output_file
+            ])
+
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             return {
                 "success": True,
@@ -195,19 +269,22 @@ def process_video_file(
     target_fps: float,
     parallel_jobs: int,
     ffmpeg_path: str,
-    use_videotoolbox: bool
+    output_codec: str,
+    quality_mode: str,
+    quality_value: float,
+    output_folder_mode: str = "per_file"
 ) -> dict:
     """Process a single video file, splitting it into segments."""
-    
+
     file_id = Path(video_path).name
     emit_event(EventType.FILE_START, file=file_id, path=video_path)
-    
+
     # Probe video
     info = probe_video(video_path, ffmpeg_path)
     if not info:
         emit_event(EventType.FILE_ERROR, file=file_id, error="Failed to probe video")
         return {"success": False, "file": file_id, "error": "Failed to probe video"}
-    
+
     # Calculate segment parameters
     duration = info['duration']
     if split_method == "duration":
@@ -216,43 +293,52 @@ def process_video_file(
     else:  # segments
         num_segments = int(split_value)
         segment_duration = duration / num_segments
-    
+
     # Setup output directory
     input_dir = os.path.dirname(os.path.abspath(video_path)) or '.'
     input_name = Path(video_path).stem
     extension = Path(video_path).suffix
-    output_dir = os.path.join(input_dir, f"{input_name}_parts")
-    os.makedirs(output_dir, exist_ok=True)
-    
-    encoder = 'h264_videotoolbox' if use_videotoolbox else 'libx264'
-    
+
+    if output_folder_mode == "alongside":
+        # Output files next to source, no subfolder
+        output_dir = input_dir
+    else:
+        # Default: per-file subfolder
+        output_dir = os.path.join(input_dir, f"{input_name}_parts")
+        os.makedirs(output_dir, exist_ok=True)
+
+    # Select encoder and build flags
+    encoder, encoder_flags, is_copy = select_encoder(
+        output_codec, quality_mode, quality_value, info['bit_rate'], ffmpeg_path
+    )
+
     # Build segment tasks
     segment_tasks = []
     for i in range(num_segments):
         start_time = i * segment_duration
         output_file = os.path.join(output_dir, f"{input_name}_part{i+1:03d}{extension}")
-        
+
         segment_tasks.append((
             video_path, output_file, start_time, segment_duration, target_fps,
-            info['bit_rate'], info['width'], info['height'], encoder, ffmpeg_path,
-            i + 1, num_segments, file_id
+            info['width'], info['height'], encoder, encoder_flags, is_copy,
+            ffmpeg_path, i + 1, num_segments, file_id
         ))
-    
+
     # Process segments (parallel within this file's allocation)
     completed = 0
     errors = []
     outputs = []
-    
+
     # Use at most parallel_jobs workers for this file's segments
     workers = min(parallel_jobs, len(segment_tasks))
-    
+
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(split_single_segment, task): task for task in segment_tasks}
-        
+
         for future in as_completed(futures):
             result = future.result()
             completed += 1
-            
+
             if result["success"]:
                 outputs.append(result["output"])
                 emit_event(
@@ -270,7 +356,7 @@ def process_video_file(
                     segment=result["segment"],
                     error=result["error"]
                 )
-    
+
     success = len(errors) == 0
     emit_event(
         EventType.FILE_COMPLETE,
@@ -280,7 +366,7 @@ def process_video_file(
         segments_total=num_segments,
         output_dir=output_dir
     )
-    
+
     return {
         "success": success,
         "file": file_id,
@@ -293,7 +379,7 @@ def process_video_file(
 def run_batch(config: dict):
     """
     Run batch video splitting based on configuration.
-    
+
     Config structure:
     {
         "files": ["/path/to/video1.mp4", ...],
@@ -303,20 +389,28 @@ def run_batch(config: dict):
             "fps_mode": "single" | "per_file",
             "fps_value": 30,
             "fps_values": {"filename.mp4": 24, ...},
-            "parallel_jobs": 4
+            "parallel_jobs": 4,
+            "output_codec": "copy" | "h264" | "hevc",
+            "quality_mode": "quality" | "match_bitrate",
+            "quality_value": 65,
+            "output_folder_mode": "per_file" | "alongside"
         }
     }
     """
     files = config.get("files", [])
     settings = config.get("config", {})
-    
+
     split_method = settings.get("split_method", "duration")
     split_value = settings.get("split_value", 60)
     fps_mode = settings.get("fps_mode", "single")
     fps_value = settings.get("fps_value", 30)
     fps_values = settings.get("fps_values", {})
     parallel_jobs = settings.get("parallel_jobs", 4)
-    
+    output_codec = settings.get("output_codec", "copy")
+    quality_mode = settings.get("quality_mode", "quality")
+    quality_value = settings.get("quality_value", 65)
+    output_folder_mode = settings.get("output_folder_mode", "per_file")
+
     # Validate files
     valid_files = []
     for f in files:
@@ -324,15 +418,14 @@ def run_batch(config: dict):
             valid_files.append(f)
         else:
             emit_event(EventType.ERROR, message=f"File not found: {f}")
-    
+
     if not valid_files:
         emit_event(EventType.ERROR, message="No valid files to process")
         return
-    
+
     # Setup
     ffmpeg_path = get_ffmpeg_path()
-    use_videotoolbox = check_videotoolbox_support(ffmpeg_path)
-    
+
     emit_event(
         EventType.START,
         total_files=len(valid_files),
@@ -340,30 +433,31 @@ def run_batch(config: dict):
         split_value=split_value,
         fps_mode=fps_mode,
         parallel_jobs=parallel_jobs,
-        hardware_acceleration=use_videotoolbox,
+        output_codec=output_codec,
+        quality_mode=quality_mode,
         ffmpeg_path=ffmpeg_path
     )
-    
+
     results = []
-    
+
     # Process files serially (parallelism is within each file's segments)
     # This prevents I/O thrashing from too many simultaneous reads
     for i, video_path in enumerate(valid_files):
         filename = Path(video_path).name
-        
+
         # Determine FPS for this file
         if fps_mode == "per_file" and filename in fps_values:
             target_fps = fps_values[filename]
         else:
             target_fps = fps_value
-        
+
         emit_event(
             EventType.PROGRESS,
             current_file=i + 1,
             total_files=len(valid_files),
             filename=filename
         )
-        
+
         result = process_video_file(
             video_path=video_path,
             split_method=split_method,
@@ -371,14 +465,17 @@ def run_batch(config: dict):
             target_fps=target_fps,
             parallel_jobs=parallel_jobs,
             ffmpeg_path=ffmpeg_path,
-            use_videotoolbox=use_videotoolbox
+            output_codec=output_codec,
+            quality_mode=quality_mode,
+            quality_value=quality_value,
+            output_folder_mode=output_folder_mode
         )
         results.append(result)
-    
+
     # Final summary
     successful = sum(1 for r in results if r["success"])
     failed = len(results) - successful
-    
+
     emit_event(
         EventType.COMPLETE,
         total_files=len(valid_files),
@@ -391,7 +488,7 @@ def run_batch(config: dict):
 def main():
     """Entry point - read config from stdin or file argument."""
     config = None
-    
+
     # Check for config file argument
     if len(sys.argv) > 1:
         if sys.argv[1] == "--config" and len(sys.argv) > 2:
@@ -405,7 +502,7 @@ def main():
         elif sys.argv[1] == "--help":
             print(__doc__)
             sys.exit(0)
-    
+
     # If no config from args, try stdin
     if config is None:
         try:
@@ -417,7 +514,7 @@ def main():
         except json.JSONDecodeError as e:
             emit_event(EventType.ERROR, message=f"Invalid JSON input: {e}")
             sys.exit(1)
-    
+
     # Run the batch processor
     run_batch(config)
 

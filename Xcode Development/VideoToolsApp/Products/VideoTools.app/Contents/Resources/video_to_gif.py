@@ -7,8 +7,9 @@ Features:
 - Multi-segment trimming (remove arbitrary sections from the middle)
 - Resolution control (scale, fixed width, custom dimensions)
 - Frame rate and speed adjustment
-- Optimal palette generation for high-quality GIFs
-- Configurable dithering and color count
+- Output format selection: GIF (palette-optimized), APNG (full 24-bit lossless), or WebP (lossy, best size/quality)
+- Optimal palette generation for high-quality GIFs (skipped for APNG)
+- Configurable dithering and color count (GIF only)
 - Loop control (infinite, once, or custom count)
 
 Usage:
@@ -30,6 +31,8 @@ Input JSON Schema:
         "loop_count": 0,  // 0 = infinite, 1 = once, N = N times
         "dither_method": "floyd_steinberg" | "bayer" | "sierra2_4a" | "none",
         "color_count": 256,
+        "output_format": "gif" | "apng" | "webp",  // default: "gif"
+        "webp_quality": 80,  // 1-100, WebP only
         "trim_start": 0,
         "trim_end": null,  // null = use video duration
         "cut_segments": [  // segments to REMOVE
@@ -69,6 +72,88 @@ def emit_event(event_type: EventType, **kwargs):
     """Emit a JSON event to stdout for the Swift app to consume."""
     event = {"event": event_type.value, **kwargs}
     print(json.dumps(event), flush=True)
+
+
+def check_webp_support(ffmpeg_path: str) -> bool:
+    """Check if this FFmpeg binary has libwebp compiled in."""
+    try:
+        result = subprocess.run(
+            [ffmpeg_path, '-encoders'],
+            capture_output=True, text=True
+        )
+        return 'webp' in result.stdout.lower()
+    except Exception:
+        return False
+
+
+def create_webp_with_pillow(
+    source_path: str,
+    vf_filters: List[str],
+    loop_count: int,
+    webp_quality: int,
+    frame_rate: float,
+    output_path: str,
+    ffmpeg_path: str,
+    temp_dir: str
+) -> None:
+    """
+    Create animated WebP via Pillow — fallback when FFmpeg lacks libwebp.
+    Extracts frames as PNGs with FFmpeg, then assembles them with Pillow.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        raise Exception(
+            "WebP output requires either FFmpeg with libwebp support or Pillow. "
+            "Install Pillow via: pip install Pillow  "
+            "Or get a full FFmpeg via: conda install -c conda-forge ffmpeg"
+        )
+
+    frames_dir = os.path.join(temp_dir, "webp_frames")
+    os.makedirs(frames_dir, exist_ok=True)
+
+    # Extract frames as JPEG (much faster than PNG — we're going lossy anyway)
+    frame_pattern = os.path.join(frames_dir, "frame_%06d.jpg")
+    cmd = [
+        ffmpeg_path, '-y',
+        '-i', source_path,
+        '-vf', ",".join(vf_filters),
+        '-q:v', '2',  # JPEG quality 1-31, lower = better (2 ≈ 95% quality)
+        frame_pattern
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception(f"Frame extraction failed: {result.stderr[:200]}")
+
+    # Load frames in order
+    frame_files = sorted(
+        os.path.join(frames_dir, f)
+        for f in os.listdir(frames_dir)
+        if f.endswith('.jpg')
+    )
+    if not frame_files:
+        raise Exception("No frames extracted from video")
+
+    # Use RGB — video content has no alpha, avoids unnecessary conversion overhead
+    frames = [Image.open(f).convert('RGB') for f in frame_files]
+    frame_duration_ms = max(1, int(1000 / frame_rate))
+
+    # Pass duration as a list — single integer is unreliable in Pillow for WebP
+    # and causes subsequent frames to fall back to a slow default (~1000ms each)
+    durations = [frame_duration_ms] * len(frames)
+
+    # Save animated WebP — loop=0 means infinite (matches GIF/APNG convention)
+    # method=2: good balance of encode speed vs compression ratio (0=fastest, 6=best)
+    frames[0].save(
+        output_path,
+        format='WEBP',
+        save_all=True,
+        append_images=frames[1:],
+        loop=loop_count,
+        duration=durations,
+        quality=webp_quality,
+        method=2
+    )
 
 
 def get_ffmpeg_path() -> str:
@@ -239,6 +324,10 @@ def process_video_to_gif(
     loop_count = config.get('loop_count', 0)
     dither_method = config.get('dither_method', 'floyd_steinberg')
     color_count = config.get('color_count', 256)
+    output_format = config.get('output_format', 'gif')  # 'gif', 'apng', or 'webp'
+    is_apng = output_format == 'apng'
+    is_webp = output_format == 'webp'
+    webp_quality = config.get('webp_quality', 80)
     trim_start = config.get('trim_start', 0)
     trim_end = config.get('trim_end')
     cut_segments = config.get('cut_segments', [])
@@ -255,7 +344,13 @@ def process_video_to_gif(
     # Build output path
     input_dir = os.path.dirname(os.path.abspath(video_path)) or '.'
     input_name = Path(video_path).stem
-    output_path = os.path.join(input_dir, f"{input_name}.gif")
+    if is_apng:
+        output_ext = ".png"
+    elif is_webp:
+        output_ext = ".webp"
+    else:
+        output_ext = ".gif"
+    output_path = os.path.join(input_dir, f"{input_name}{output_ext}")
     
     # Build scale filter
     scale_filter = build_scale_filter(resolution_config, info['width'], info['height'])
@@ -324,67 +419,134 @@ def process_video_to_gif(
                 # Use trim filter for frame-accurate cutting with filter_complex
                 trim_filter = f"trim=start={start:.6f}:duration={seg_duration:.6f},setpts=PTS-STARTPTS"
 
-            # Generate optimal palette
-            palette_path = os.path.join(temp_dir, "palette.png")
+            if is_webp:
+                # --- WebP path: lossy, full color, best size/quality tradeoff ---
+                # Build filter list (shared by both FFmpeg and Pillow paths)
+                if len(keep_segments) > 1:
+                    # Multi-segment: source is already trimmed/merged
+                    vf_filters = [f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        vf_filters.insert(0, speed_filter)
+                else:
+                    # Single segment: apply trim filter first
+                    vf_filters = [trim_filter, f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        vf_filters.insert(1, speed_filter)
 
-            # Build filter chain for palette generation
-            if len(keep_segments) > 1:
-                # Multi-segment: source is already trimmed/merged
-                filters = [f"fps={frame_rate}", scale_filter]
-                if speed_filter:
-                    filters.insert(0, speed_filter)
-                filters.append(f"palettegen=max_colors={color_count}")
-                palette_filter = ",".join(filters)
+                if check_webp_support(ffmpeg_path):
+                    # FFmpeg has libwebp — direct encode
+                    cmd = [
+                        ffmpeg_path, '-y',
+                        '-i', source_for_gif,
+                        '-vf', ",".join(vf_filters),
+                        '-f', 'webp',
+                        '-quality', str(webp_quality),
+                        '-loop', str(loop_count),
+                        output_path
+                    ]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        raise Exception(f"WebP creation failed: {result.stderr[:200]}")
+                else:
+                    # FFmpeg lacks libwebp — fall back to Pillow frame assembly
+                    create_webp_with_pillow(
+                        source_path=source_for_gif,
+                        vf_filters=vf_filters,
+                        loop_count=loop_count,
+                        webp_quality=webp_quality,
+                        frame_rate=frame_rate,
+                        output_path=output_path,
+                        ffmpeg_path=ffmpeg_path,
+                        temp_dir=temp_dir
+                    )
+
+            elif is_apng:
+                # --- APNG path: full 24-bit color, no palette generation needed ---
+                if len(keep_segments) > 1:
+                    # Multi-segment: source is already trimmed/merged
+                    vf_filters = [f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        vf_filters.insert(0, speed_filter)
+                else:
+                    # Single segment: apply trim filter first
+                    vf_filters = [trim_filter, f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        vf_filters.insert(1, speed_filter)
+
+                cmd = [
+                    ffmpeg_path, '-y',
+                    '-i', source_for_gif,
+                    '-vf', ",".join(vf_filters),
+                    '-f', 'apng',
+                    '-plays', str(loop_count),
+                    output_path
+                ]
+
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise Exception(f"APNG creation failed: {result.stderr[:200]}")
+
             else:
-                # Single segment: apply trim filter first
-                filters = [trim_filter, f"fps={frame_rate}", scale_filter]
-                if speed_filter:
-                    filters.insert(1, speed_filter)  # After trim, before fps
-                filters.append(f"palettegen=max_colors={color_count}")
-                palette_filter = ",".join(filters)
+                # --- GIF path: two-pass palette generation for optimal quality ---
+                palette_path = os.path.join(temp_dir, "palette.png")
 
-            cmd = [
-                ffmpeg_path, '-y',
-                '-i', source_for_gif,
-                '-vf', palette_filter,
-                palette_path
-            ]
+                # Build filter chain for palette generation
+                if len(keep_segments) > 1:
+                    # Multi-segment: source is already trimmed/merged
+                    filters = [f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        filters.insert(0, speed_filter)
+                    filters.append(f"palettegen=max_colors={color_count}")
+                    palette_filter = ",".join(filters)
+                else:
+                    # Single segment: apply trim filter first
+                    filters = [trim_filter, f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        filters.insert(1, speed_filter)  # After trim, before fps
+                    filters.append(f"palettegen=max_colors={color_count}")
+                    palette_filter = ",".join(filters)
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise Exception(f"Palette generation failed: {result.stderr[:200]}")
+                cmd = [
+                    ffmpeg_path, '-y',
+                    '-i', source_for_gif,
+                    '-vf', palette_filter,
+                    palette_path
+                ]
 
-            # Create GIF using palette
-            # Dither option
-            dither_opt = f"dither={dither_method}" if dither_method != "none" else "dither=none"
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise Exception(f"Palette generation failed: {result.stderr[:200]}")
 
-            if len(keep_segments) > 1:
-                # Multi-segment: source is already trimmed/merged
-                base_filters = [f"fps={frame_rate}", scale_filter]
-                if speed_filter:
-                    base_filters.insert(0, speed_filter)
-                base_filter_str = ",".join(base_filters)
-                filter_complex = f"[0:v]{base_filter_str}[v];[v][1:v]paletteuse={dither_opt}"
-            else:
-                # Single segment: apply trim filter in filter_complex
-                base_filters = [trim_filter, f"fps={frame_rate}", scale_filter]
-                if speed_filter:
-                    base_filters.insert(1, speed_filter)  # After trim, before fps
-                base_filter_str = ",".join(base_filters)
-                filter_complex = f"[0:v]{base_filter_str}[v];[v][1:v]paletteuse={dither_opt}"
+                # Create GIF using palette
+                dither_opt = f"dither={dither_method}" if dither_method != "none" else "dither=none"
 
-            cmd = [
-                ffmpeg_path, '-y',
-                '-i', source_for_gif,
-                '-i', palette_path,
-                '-filter_complex', filter_complex,
-                '-loop', str(loop_count),
-                output_path
-            ]
+                if len(keep_segments) > 1:
+                    # Multi-segment: source is already trimmed/merged
+                    base_filters = [f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        base_filters.insert(0, speed_filter)
+                    base_filter_str = ",".join(base_filters)
+                    filter_complex = f"[0:v]{base_filter_str}[v];[v][1:v]paletteuse={dither_opt}"
+                else:
+                    # Single segment: apply trim filter in filter_complex
+                    base_filters = [trim_filter, f"fps={frame_rate}", scale_filter]
+                    if speed_filter:
+                        base_filters.insert(1, speed_filter)  # After trim, before fps
+                    base_filter_str = ",".join(base_filters)
+                    filter_complex = f"[0:v]{base_filter_str}[v];[v][1:v]paletteuse={dither_opt}"
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise Exception(f"GIF creation failed: {result.stderr[:200]}")
+                cmd = [
+                    ffmpeg_path, '-y',
+                    '-i', source_for_gif,
+                    '-i', palette_path,
+                    '-filter_complex', filter_complex,
+                    '-loop', str(loop_count),
+                    output_path
+                ]
+
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise Exception(f"GIF creation failed: {result.stderr[:200]}")
             
             # Get output file size
             output_size = os.path.getsize(output_path)
