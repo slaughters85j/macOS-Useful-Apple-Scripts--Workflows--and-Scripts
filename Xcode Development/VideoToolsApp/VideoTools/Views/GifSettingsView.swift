@@ -114,7 +114,7 @@ struct GifSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                     
-                    Text("10-15 fps typical for GIFs. Higher = larger file size.")
+                    Text("10-15 fps typical for GIF/APNG. Higher = larger file size.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                     
@@ -140,33 +140,61 @@ struct GifSettingsView: View {
                 // MARK: - Quality Section
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader("Quality", icon: "paintpalette")
-                    
-                    HStack {
-                        Text("Colors")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Slider(value: $state.gifColorCount, in: 16...256, step: 16)
-                            .frame(width: 150)
-                        Text("\(Int(state.gifColorCount))")
-                            .monospacedDigit()
-                            .frame(width: 35, alignment: .trailing)
+
+                    Picker("Format", selection: $state.gifOutputFormat) {
+                        ForEach(GifOutputFormat.allCases) { format in
+                            Text(format.rawValue).tag(format)
+                        }
                     }
-                    
-                    Text("GIFs support max 256 colors. Fewer colors = smaller file.")
+                    .pickerStyle(.segmented)
+
+                    Text({
+                        switch state.gifOutputFormat {
+                        case .gif:  return "GIF supports max 256 colors. Fewer = smaller file."
+                        case .apng: return "APNG: full 24-bit color, lossless. Larger files."
+                        case .webp: return "WebP: full color, lossy compression. Best size/quality tradeoff."
+                        }
+                    }())
                         .font(.caption)
                         .foregroundStyle(.tertiary)
-                    
-                    HStack {
-                        Text("Dithering")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Picker("Dither", selection: $state.gifDitherMethod) {
-                            ForEach(GifDitherMethod.allCases) { method in
-                                Text(method.rawValue).tag(method)
-                            }
+
+                    if state.gifOutputFormat.supportsQualitySlider {
+                        HStack {
+                            Text("Quality")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Slider(value: $state.gifWebPQuality, in: 1...100, step: 1)
+                                .frame(width: 150)
+                            Text("\(Int(state.gifWebPQuality))")
+                                .monospacedDigit()
+                                .frame(width: 35, alignment: .trailing)
                         }
-                        .pickerStyle(.menu)
-                        .frame(width: 140)
+                    }
+
+                    if state.gifOutputFormat.supportsColorPalette {
+                        HStack {
+                            Text("Colors")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Slider(value: $state.gifColorCount, in: 16...256, step: 16)
+                                .frame(width: 150)
+                            Text("\(Int(state.gifColorCount))")
+                                .monospacedDigit()
+                                .frame(width: 35, alignment: .trailing)
+                        }
+
+                        HStack {
+                            Text("Dithering")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Picker("Dither", selection: $state.gifDitherMethod) {
+                                ForEach(GifDitherMethod.allCases) { method in
+                                    Text(method.rawValue).tag(method)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 140)
+                        }
                     }
                 }
                 

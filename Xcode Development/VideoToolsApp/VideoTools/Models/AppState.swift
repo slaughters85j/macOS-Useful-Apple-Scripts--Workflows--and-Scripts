@@ -56,6 +56,8 @@ final class AppState {
     var gifLoopCount: Int = 3
     var gifDitherMethod: GifDitherMethod = .floydSteinberg
     var gifColorCount: Double = 256
+    var gifOutputFormat: GifOutputFormat = .gif
+    var gifWebPQuality: Double = 80
     var gifTrimStart: Double = 0
     var gifTrimEnd: Double? = nil
     var gifCutSegments: [CutSegment] = []
@@ -401,6 +403,8 @@ final class AppState {
                 loop_count: loopValue,
                 dither_method: gifDitherMethod.ffmpegValue,
                 color_count: Int(gifColorCount),
+                output_format: gifOutputFormat.rawValue.lowercased(),
+                webp_quality: Int(gifWebPQuality),
                 trim_start: gifTrimStart,
                 trim_end: gifTrimEnd,
                 cut_segments: gifCutSegments.map { ["start": $0.startTime, "end": $0.endTime] }
@@ -420,6 +424,8 @@ struct GifConfig: Encodable {
         let loop_count: Int
         let dither_method: String
         let color_count: Int
+        let output_format: String
+        let webp_quality: Int
         let trim_start: Double
         let trim_end: Double?
         let cut_segments: [[String: Double]]

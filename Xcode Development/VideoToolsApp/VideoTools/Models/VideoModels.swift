@@ -248,8 +248,30 @@ enum GifLoopMode: String, CaseIterable, Identifiable {
     case infinite = "Infinite"
     case once = "Play Once"
     case custom = "Custom Count"
-    
+
     var id: String { rawValue }
+}
+
+enum GifOutputFormat: String, CaseIterable, Identifiable {
+    case gif = "GIF"
+    case apng = "APNG"
+    case webp = "WebP"
+
+    var id: String { rawValue }
+
+    var fileExtension: String {
+        switch self {
+        case .gif:  return "gif"
+        case .apng: return "png"
+        case .webp: return "webp"
+        }
+    }
+
+    /// GIF only — requires two-pass palette generation
+    var supportsColorPalette: Bool { self == .gif }
+
+    /// WebP only — exposes lossy quality slider
+    var supportsQualitySlider: Bool { self == .webp }
 }
 
 /// Represents a segment to REMOVE from the video
