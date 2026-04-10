@@ -98,7 +98,7 @@ struct ProcessButton: View {
                 try await runMerger()
             case .renameVideos, .renamePhotos:
                 await runRename()
-            case .metadata:
+            case .metadata, .mediaPlayer:
                 break
             }
         } catch {

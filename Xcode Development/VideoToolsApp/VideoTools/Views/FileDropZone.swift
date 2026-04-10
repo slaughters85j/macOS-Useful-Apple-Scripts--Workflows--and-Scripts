@@ -71,6 +71,7 @@ struct FileDropZone: View {
 
 struct FileRow: View {
     @Environment(AppState.self) private var appState
+    @Environment(MediaPlayerManager.self) private var playerManager
     let fileId: UUID
     @State private var isExpanded = false
     
@@ -126,6 +127,23 @@ struct FileRow: View {
                     }
                     
                     if file.metadata != nil {
+                        // Play button — available on ALL tool modes
+                        Button {
+                            if playerManager.currentFile?.id == file.id {
+                                playerManager.togglePlayPause()
+                            } else {
+                                playerManager.play(file: file, playlist: appState.videoFiles)
+                            }
+                        } label: {
+                            Image(systemName: playerManager.currentFile?.id == file.id && playerManager.isPlaying
+                                ? "pause.circle.fill"
+                                : "play.circle.fill")
+                                .foregroundStyle(Color.green)
+                        }
+                        .buttonStyle(.plain)
+                        .help(playerManager.currentFile?.id == file.id && playerManager.isPlaying
+                            ? "Pause" : "Play in media player")
+
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 isExpanded.toggle()
@@ -136,7 +154,7 @@ struct FileRow: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    
+
                     Button {
                         appState.removeFile(file)
                     } label: {
@@ -185,6 +203,9 @@ struct FileRow: View {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.red)
             }
+        } else if playerManager.currentFile?.id == fileId {
+            Image(systemName: "speaker.wave.2.fill")
+                .foregroundStyle(Color.accentColor)
         } else {
             Image(systemName: "film")
                 .foregroundStyle(.secondary)

@@ -10,6 +10,7 @@ final class AppState {
     var processingStatus: ProcessingStatus = .idle
     var fileProgress: [String: FileProgress] = [:]
     var showingFilePicker = false
+    var isMediaPlayerVisible = false
     var updateVersion: Int = 0
     
     // Splitter settings
@@ -100,7 +101,7 @@ final class AppState {
             return !(renameVideoFolder?.discoveredFiles.isEmpty ?? true)
         case .renamePhotos:
             return !(renamePhotoFolder?.discoveredFiles.isEmpty ?? true)
-        case .metadata:
+        case .metadata, .mediaPlayer:
             return false
         }
     }
