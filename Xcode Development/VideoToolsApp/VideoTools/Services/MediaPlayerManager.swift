@@ -1,6 +1,8 @@
 import AVFoundation
 import Combine
+import ImageIO
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Deinit Cleanup Bag
 
@@ -153,6 +155,51 @@ final class MediaPlayerManager {
         }
     }
 
+    // MARK: - Frame Capture
+
+    /// Captures the current video frame and saves it as a JPEG next to the source file.
+    /// Returns the URL of the saved image on success.
+    func saveCurrentFrame() async throws -> URL {
+        guard let currentFile else { throw FrameSaveError.noFileLoaded }
+        guard let playerItem = player.currentItem else { throw FrameSaveError.noPlayerItem }
+
+        let captureTime = CMTime(seconds: currentTime, preferredTimescale: 600)
+        let asset = playerItem.asset
+
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        generator.appliesPreferredTrackTransform = true
+
+        let cgImage = try await generator.image(at: captureTime).image
+
+        // Build output path: same directory, same base name + datestamp, .jpg extension
+        let directory = currentFile.url.deletingLastPathComponent()
+        let baseName  = currentFile.url.deletingPathExtension().lastPathComponent
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = formatter.string(from: Date())
+
+        let outputURL = directory.appendingPathComponent("\(baseName)_frame_\(timestamp).jpg")
+
+        guard let destination = CGImageDestinationCreateWithURL(
+            outputURL as CFURL,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else { throw FrameSaveError.failedToCreateDestination }
+
+        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.95]
+        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+
+        guard CGImageDestinationFinalize(destination) else {
+            throw FrameSaveError.failedToWrite
+        }
+
+        return outputURL
+    }
+
     /// Stop playback and release resources (called when inspector is dismissed)
     func stop() {
         pause()
@@ -254,6 +301,24 @@ final class MediaPlayerManager {
             // No loop, no playlist — stop
             pause()
             seek(to: 0)
+        }
+    }
+}
+
+// MARK: - Frame Save Error
+
+enum FrameSaveError: LocalizedError {
+    case noFileLoaded
+    case noPlayerItem
+    case failedToCreateDestination
+    case failedToWrite
+
+    var errorDescription: String? {
+        switch self {
+        case .noFileLoaded:              return "No file is currently loaded."
+        case .noPlayerItem:             return "Player item is unavailable."
+        case .failedToCreateDestination: return "Could not create the output JPEG file."
+        case .failedToWrite:            return "Failed to write JPEG data to disk."
         }
     }
 }

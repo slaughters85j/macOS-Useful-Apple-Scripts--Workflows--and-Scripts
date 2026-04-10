@@ -10,6 +10,8 @@ struct MediaPlayerView: View {
     @State private var isScrubbing = false
     @State private var scrubTime: Double = 0
     @State private var scrubDebounce: Task<Void, Never>?
+    @State private var saveFrameMessage: String?
+    @State private var saveFrameTask: Task<Void, Never>?
 
     var body: some View {
         @Bindable var pm = playerManager
@@ -44,6 +46,7 @@ struct MediaPlayerView: View {
                 nowPlayingInfo
                 scrubBar
                 transportControls
+                saveFrameButton
 
                 Divider()
 
@@ -174,6 +177,44 @@ struct MediaPlayerView: View {
             .disabled(playerManager.currentFile == nil)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Save Frame Button
+
+    private var saveFrameButton: some View {
+        HStack(spacing: 8) {
+            Button("Save Frame") {
+                // Cancel any in-flight feedback timer
+                saveFrameTask?.cancel()
+                saveFrameTask = Task { @MainActor in
+                    do {
+                        let url = try await playerManager.saveCurrentFrame()
+                        saveFrameMessage = "Saved: \(url.lastPathComponent)"
+                    } catch {
+                        saveFrameMessage = "Failed: \(error.localizedDescription)"
+                    }
+                    try? await Task.sleep(for: .seconds(3))
+                    guard !Task.isCancelled else { return }
+                    saveFrameMessage = nil
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(playerManager.currentFile == nil)
+            .help("Save current frame as JPEG next to the source file")
+
+            if let message = saveFrameMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .transition(.opacity)
+            }
+
+            Spacer()
+        }
+        .animation(.easeInOut(duration: 0.2), value: saveFrameMessage)
     }
 
     // MARK: - Speed Control
