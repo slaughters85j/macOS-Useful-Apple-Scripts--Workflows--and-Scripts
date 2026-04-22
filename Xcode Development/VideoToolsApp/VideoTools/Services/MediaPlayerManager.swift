@@ -150,6 +150,14 @@ final class MediaPlayerManager {
     /// Keep playlist in sync with the live file list (called from ContentView onChange)
     func updatePlaylist(_ files: [VideoFile]) {
         playlist = files
+
+        // If the currently playing file was removed (or the list was cleared), stop playback
+        if let currentFile, !files.contains(where: { $0.id == currentFile.id }) {
+            stop()
+            return
+        }
+
+        // Current file still present — keep index in sync
         if let currentFile, let newIndex = files.firstIndex(where: { $0.id == currentFile.id }) {
             currentTrackIndex = newIndex
         }
