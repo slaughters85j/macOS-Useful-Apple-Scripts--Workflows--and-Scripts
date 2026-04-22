@@ -406,6 +406,17 @@ enum RenameSortOrder: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+// MARK: - Rename Sub-Mode
+
+/// Toggles between folder-based sequential rename and loose-file find/replace rename
+/// within the existing .renameVideos and .renamePhotos tool modes.
+enum RenameSubMode: String, CaseIterable, Identifiable {
+    case folderRename = "Folder Rename"
+    case findReplace = "Find & Replace"
+
+    var id: String { rawValue }
+}
+
 struct RenameFileEntry: Identifiable {
     let id = UUID()
     let originalURL: URL

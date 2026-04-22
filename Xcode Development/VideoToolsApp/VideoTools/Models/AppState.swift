@@ -29,7 +29,8 @@ final class AppState {
     var sampleRate: SampleRate = .hz48000
     var audioChannelMode: AudioChannelMode = .stereo
 
-    // Rename settings
+    // Rename settings (shared)
+    var renameSubMode: RenameSubMode = .folderRename
     var renameVideoFolder: RenameFolder?
     var renamePhotoFolder: RenameFolder?
     var renamePrefix: String = ""
@@ -40,6 +41,12 @@ final class AppState {
     var showingFolderPicker: Bool = false
     var showRenameConfirmation: Bool = false
     var renameFolderAlert: RenameFolderAlert?
+
+    // Find & Replace settings
+    var findReplaceFiles: [RenameFileEntry] = []
+    var findText: String = ""
+    var replaceText: String = ""
+    var findReplaceCaseSensitive: Bool = true
 
     // Metadata settings
     var metadataFile: MetadataFile?
@@ -97,10 +104,12 @@ final class AppState {
             return !videoFiles.isEmpty
         case .merge:
             return videoFiles.count >= 2
-        case .renameVideos:
-            return !(renameVideoFolder?.discoveredFiles.isEmpty ?? true)
-        case .renamePhotos:
-            return !(renamePhotoFolder?.discoveredFiles.isEmpty ?? true)
+        case .renameVideos, .renamePhotos:
+            if renameSubMode == .findReplace {
+                return !findReplaceFiles.isEmpty && !findText.isEmpty
+                    && findReplaceFiles.contains { $0.proposedName != $0.originalName }
+            }
+            return !(activeRenameFolder?.discoveredFiles.isEmpty ?? true)
         case .metadata, .mediaPlayer:
             return false
         }
@@ -355,6 +364,159 @@ final class AppState {
         renamePrefix = ""
         renameStartNumber = 1
         processingStatus = .idle
+    }
+
+    // MARK: - Find & Replace Operations
+
+    /// Add individual files for find/replace renaming. Validates file type and deduplicates.
+    func addFindReplaceFiles(urls: [URL]) {
+        let extensions = selectedMode.supportedExtensions
+        let fm = FileManager.default
+        let existingPaths = Set(findReplaceFiles.map(\.originalURL.path))
+        let isFirstBatch = findReplaceFiles.isEmpty
+
+        for url in urls {
+            // Skip directories
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else {
+                continue
+            }
+
+            // Skip unsupported extensions (only filter if mode has defined extensions)
+            if !extensions.isEmpty {
+                guard extensions.contains(url.pathExtension.lowercased()) else { continue }
+            }
+
+            // Skip duplicates
+            guard !existingPaths.contains(url.path) else { continue }
+
+            let entry = RenameFileEntry(
+                originalURL: url,
+                originalName: url.lastPathComponent,
+                proposedName: url.lastPathComponent
+            )
+            findReplaceFiles.append(entry)
+        }
+
+        // Auto-detect common prefix on first batch of files
+        if isFirstBatch && findReplaceFiles.count >= 2 {
+            autoDetectCommonPrefix()
+        }
+
+        updateFindReplacePreview()
+    }
+
+    /// Update proposed names by applying find/replace to each file's original name.
+    func updateFindReplacePreview() {
+        let options: String.CompareOptions = findReplaceCaseSensitive ? [] : .caseInsensitive
+
+        for i in findReplaceFiles.indices {
+            let original = findReplaceFiles[i].originalName
+            let ext = findReplaceFiles[i].fileExtension
+            let baseName = (original as NSString).deletingPathExtension
+
+            if findText.isEmpty {
+                findReplaceFiles[i].proposedName = original
+            } else {
+                let newBase = baseName.replacingOccurrences(of: findText, with: replaceText, options: options)
+                findReplaceFiles[i].proposedName = "\(newBase).\(ext)"
+            }
+
+            // Reset status before collision detection
+            findReplaceFiles[i].status = .pending
+        }
+
+        detectFindReplaceCollisions()
+    }
+
+    /// Detect naming collisions for find/replace files, grouped by parent directory.
+    private func detectFindReplaceCollisions() {
+        let fm = FileManager.default
+
+        // Group file indices by parent directory
+        var dirGroups: [String: [Int]] = [:]
+        for i in findReplaceFiles.indices {
+            let dir = findReplaceFiles[i].originalURL.deletingLastPathComponent().path
+            dirGroups[dir, default: []].append(i)
+        }
+
+        for (dir, indices) in dirGroups {
+            let originalNames = Set(indices.map { findReplaceFiles[$0].originalName })
+
+            // Check for duplicate proposed names within this directory group
+            var seenProposed: [String: Int] = [:]
+            for i in indices {
+                let proposed = findReplaceFiles[i].proposedName
+                if let firstIndex = seenProposed[proposed] {
+                    findReplaceFiles[i].status = .collision
+                    findReplaceFiles[firstIndex].status = .collision
+                } else {
+                    seenProposed[proposed] = i
+                }
+            }
+
+            // Check for conflicts with existing files on disk not in our rename set
+            for i in indices where findReplaceFiles[i].status != .collision {
+                let proposed = findReplaceFiles[i].proposedName
+                guard proposed != findReplaceFiles[i].originalName else { continue }
+                let targetURL = URL(fileURLWithPath: dir).appendingPathComponent(proposed)
+                if fm.fileExists(atPath: targetURL.path) && !originalNames.contains(proposed) {
+                    findReplaceFiles[i].status = .collision
+                }
+            }
+        }
+    }
+
+    /// Find the longest common prefix across all file base names and set as findText.
+    func autoDetectCommonPrefix() {
+        guard findReplaceFiles.count >= 2 else { return }
+
+        let baseNames = findReplaceFiles.map {
+            ($0.originalName as NSString).deletingPathExtension
+        }
+
+        guard let first = baseNames.first else { return }
+
+        var prefix = first
+        for name in baseNames.dropFirst() {
+            while !name.hasPrefix(prefix) && !prefix.isEmpty {
+                prefix = String(prefix.dropLast())
+            }
+            if prefix.isEmpty { return }
+        }
+
+        // Must be at least 3 characters to be useful
+        guard prefix.count >= 3 else { return }
+
+        // Don't set if the prefix IS the entire name for all files (would blank everything)
+        if baseNames.allSatisfy({ $0 == prefix }) { return }
+
+        findText = prefix
+        updateFindReplacePreview()
+    }
+
+    /// Remove a single file from the find/replace list.
+    func removeFindReplaceFile(_ entry: RenameFileEntry) {
+        findReplaceFiles.removeAll { $0.id == entry.id }
+        updateFindReplacePreview()
+    }
+
+    /// Clear all find/replace state.
+    func clearFindReplaceFiles() {
+        findReplaceFiles = []
+        findText = ""
+        replaceText = ""
+        processingStatus = .idle
+    }
+
+    /// Number of distinct parent directories in the find/replace file set.
+    var findReplaceDirectoryCount: Int {
+        Set(findReplaceFiles.map { $0.originalURL.deletingLastPathComponent().path }).count
+    }
+
+    /// Number of files that will actually be renamed (proposed name differs from original).
+    var findReplaceMatchCount: Int {
+        findReplaceFiles.filter { $0.proposedName != $0.originalName }.count
     }
 
     // MARK: - Metadata Operations

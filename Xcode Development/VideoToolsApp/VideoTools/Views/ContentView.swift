@@ -177,7 +177,11 @@ struct ContentView: View {
             case .renameVideos, .renamePhotos:
                 renameListHeader
                 Divider()
-                FolderPickerView(mode: appState.selectedMode)
+                if appState.renameSubMode == .findReplace {
+                    FindReplacePickerView(mode: appState.selectedMode)
+                } else {
+                    FolderPickerView(mode: appState.selectedMode)
+                }
 
             case .metadata:
                 metadataListHeader
@@ -214,33 +218,47 @@ struct ContentView: View {
     }
 
     private var renameListHeader: some View {
-        HStack {
-            Text("Folder")
-                .font(.headline)
+        @Bindable var state = appState
 
-            Spacer()
+        return VStack(spacing: 8) {
+            Picker("Mode", selection: $state.renameSubMode) {
+                ForEach(RenameSubMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
 
-            if appState.activeRenameFolder != nil {
-                Button {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.allowsMultipleSelection = false
-                    if panel.runModal() == .OK, let url = panel.url {
-                        appState.selectFolder(url: url, forMode: appState.selectedMode)
+            HStack {
+                Text(appState.renameSubMode == .folderRename ? "Folder" : "Files")
+                    .font(.headline)
+
+                Spacer()
+
+                if appState.renameSubMode == .folderRename {
+                    if appState.activeRenameFolder != nil {
+                        Button {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            panel.allowsMultipleSelection = false
+                            if panel.runModal() == .OK, let url = panel.url {
+                                appState.selectFolder(url: url, forMode: appState.selectedMode)
+                            }
+                        } label: {
+                            Image(systemName: "folder.badge.plus")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Change folder")
+
+                        Button {
+                            appState.clearRenameFolder()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
                     }
-                } label: {
-                    Image(systemName: "folder.badge.plus")
                 }
-                .buttonStyle(.borderless)
-                .help("Change folder")
-
-                Button {
-                    appState.clearRenameFolder()
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
             }
         }
         .padding()
@@ -278,7 +296,11 @@ struct ContentView: View {
                 case .merge:
                     MergerSettingsView()
                 case .renameVideos, .renamePhotos:
-                    RenameSettingsView(mode: appState.selectedMode)
+                    if appState.renameSubMode == .findReplace {
+                        FindReplaceSettingsView()
+                    } else {
+                        RenameSettingsView(mode: appState.selectedMode)
+                    }
                 case .metadata:
                     MetadataSettingsView()
                 case .mediaPlayer:
@@ -313,9 +335,16 @@ struct ContentView: View {
                 Label("\(appState.videoFiles.count) file(s) selected", systemImage: "film")
                     .foregroundStyle(.secondary)
             case .renameVideos, .renamePhotos:
-                let count = appState.activeRenameFolder?.discoveredFiles.count ?? 0
-                Label("\(count) file(s) to rename", systemImage: "pencil.line")
-                    .foregroundStyle(.secondary)
+                if appState.renameSubMode == .findReplace {
+                    let total = appState.findReplaceFiles.count
+                    let matches = appState.findReplaceMatchCount
+                    Label("\(matches) of \(total) file(s) to rename", systemImage: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                } else {
+                    let count = appState.activeRenameFolder?.discoveredFiles.count ?? 0
+                    Label("\(count) file(s) to rename", systemImage: "pencil.line")
+                        .foregroundStyle(.secondary)
+                }
             case .metadata:
                 if appState.metadataFile != nil {
                     Label("Metadata loaded", systemImage: "info.circle")
