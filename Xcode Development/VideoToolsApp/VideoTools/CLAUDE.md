@@ -14,16 +14,16 @@ The Xcode project file is at the repo root: `VideoTools.xcodeproj`. There is no 
 
 ## Project Overview
 
-VideoTools is a **macOS-only SwiftUI app** (deployment target: macOS 26.0, Swift 6.0, bundle ID: `com.UBSAnalytics.VideoTools`) that provides a GUI for batch video processing operations. It is a **hybrid native-plus-Python app**: the GIF and splitter pipelines are fully native (AVFoundation + ImageIO), while the remaining video operations (separate A/V, merge) still delegate to bundled Python scripts that call `ffmpeg` / `ffprobe`.
+VideoTools is a **macOS-only SwiftUI app** (deployment target: macOS 26.0, Swift 6.0, bundle ID: `com.UBSAnalytics.VideoTools`) that provides a GUI for batch video processing operations. It is a **hybrid native-plus-Python app**: the GIF, splitter, and merger pipelines are fully native (AVFoundation + ImageIO), while Separate A/V is the only remaining mode that delegates to a bundled Python script calling `ffmpeg` / `ffprobe`.
 
-The native migration is in progress. Any new feature should prefer native Swift unless there is a compelling reason (e.g. a third-party codec ffmpeg handles and AVFoundation does not) to stay on the Python path.
+The native migration is nearly complete — Separate A/V is the sole remaining Python-backed mode. Any new feature should prefer native Swift unless there is a compelling reason (e.g. a third-party codec ffmpeg handles and AVFoundation does not) to stay on the Python path.
 
 ### Tool Modes
 
 Modes are declared in `ToolMode` and routed by `ContentView` and `ProcessButton`.
 
-- **Video Processing (Python-backed)**: Separate A/V, Merge
-- **Video Processing (native)**: Split, GIF (GIF or APNG output)
+- **Video Processing (Python-backed)**: Separate A/V
+- **Video Processing (native)**: Split, Merge, GIF (GIF or APNG output)
 - **File Management**: Rename Videos, Rename Photos (batch rename using folder-name prefix with collision detection, plus a Find/Replace submode)
 - **Inspection**: Metadata (ffprobe output), Media Player (in-app playback)
 
@@ -31,16 +31,16 @@ Modes are declared in `ToolMode` and routed by `ContentView` and `ProcessButton`
 
 There are two concurrent processing architectures in this app. Knowing which one a feature uses is essential before making changes.
 
-### 1. Swift-Python IPC Bridge (separate, merge)
+### 1. Swift-Python IPC Bridge (separate A/V only)
 
-The older pattern. Used for any mode where ffmpeg does the heavy lifting.
+The older pattern. Only `Separate A/V` still uses it; the splitter and merger have been ported to native AVFoundation.
 
 1. `PythonRunner` (Swift actor) spawns a Python subprocess, sends a JSON config blob via stdin, reads newline-delimited JSON events from stdout.
-2. Each Python script (`Scripts/*.py`) reads the config from stdin, performs ffmpeg operations, emits structured event JSON lines back to Swift.
-3. `ProcessingEvent.swift` (formerly `PythonEvent.swift`) parses these JSON lines into a Swift enum with cases: `start`, `progress`, `fileStart`, `fileComplete`, `fileError`, `segmentStart`, `segmentComplete`, `complete`, `error`. The same enum is now also emitted directly by native pipelines, which is why the type was renamed.
-4. `ProcessButton.swift` orchestrates: calls `PythonRunner.runSeparator / runMerger` for the remaining Python-backed video operations, `FileRenamer` for rename operations, routes events back to `AppState`. The splitter no longer goes through `PythonRunner` at all.
+2. The surviving Python script (`Scripts/video_audio_separator_batch.py`) reads the config from stdin, performs ffmpeg operations, emits structured event JSON lines back to Swift.
+3. `ProcessingEvent.swift` (formerly `PythonEvent.swift`) parses these JSON lines into a Swift enum with cases: `start`, `progress`, `fileStart`, `fileComplete`, `fileError`, `segmentStart`, `segmentComplete`, `complete`, `error`. The same enum is also emitted directly by native pipelines, which is why the type was renamed.
+4. `ProcessButton.swift` orchestrates: calls `PythonRunner.runSeparator` for separation, native orchestrators (`GifRenderer`, `VideoSplitter`, `VideoMerger`) for the rest, `FileRenamer` for rename operations, routes events back to `AppState`.
 
-When adding a new Python-backed mode, you touch: the Python script, `PythonRunner` (new run method + config struct), `ProcessButton` (new case in `startProcessing`), `ToolMode` enum, `AppState` (new settings), `ToolSettingsViewModel` (if the settings should persist), and a new settings view.
+When Separate A/V is eventually ported, `PythonRunner` can be deleted entirely. Until then, it exists solely for this one mode.
 
 ### 2. Native GIF Pipeline (GIF / APNG output)
 
@@ -90,6 +90,31 @@ Supporting types live in `Services/Split/`:
 
 The `SplitConfig` model type lives in `Models/SplitConfig.swift` alongside the `AppState.buildSplitConfig()` builder extension (mirrors `GifRenderConfig` and `buildGifRenderConfig()`).
 
+### 4. Native Merger Pipeline (Merge mode)
+
+Most recent native pipeline. Pure Swift, no subprocess, no ffmpeg.
+
+Entry point: `VideoMerger` (actor) exposes `merge(config:onEvent:)`. Consumes a `MergeConfig` and emits `ProcessingEvent` values. Unlike the splitter (which produces N output files from N inputs), the merger produces **one** output file from N inputs, so the event stream reports a single synthetic "merge" file with per-input `segmentStart/segmentComplete` events driving the probe-phase progress.
+
+Per-batch pipeline stages:
+
+1. **Probe** every input via `AVURLAsset.load(.duration)` + `AVAssetTrack.load(...)`. Collects duration, display size (post preferredTransform), nominal fps, codec FourCC, estimated data rate, and whether an audio track is present. Result populated into an `InputVideoInfo` struct used by downstream stages.
+2. **Compatibility check** (copy codec only): `MergeCompatibilityChecker.copyModeError(inputs:)` returns `nil` or a descriptive error. Tolerances match the legacy script: codec FourCC exact, dimensions within 2 px, fps within 0.5. On mismatch, the orchestrator surfaces the error via `fileError` and aborts without writing output.
+3. **Build composition**: `CompositionBuilder.build(...)` assembles an `AVMutableComposition` by appending each input's video + audio tracks sequentially from time zero. Audio gaps are filled with `insertEmptyTimeRange` for inputs that lack audio. For re-encode, also produces an `AVMutableVideoComposition` with per-instruction layer transforms implementing letterbox (aspect-fit) or crop/fill (aspect-fill), both centered on the target canvas. Target canvas size is `max(displayWidth) × max(displayHeight)` across inputs, rounded to even numbers.
+4. **Passthrough path** (codec=Copy): `MergePassthroughExporter` wraps `AVAssetExportSession(asset: composition, preset: Passthrough)` with the modern `export(to:as:)` async API. Matches ffmpeg concat-demuxer behavior.
+5. **Re-encode path** (H.264 / HEVC): `MergeReencodeExporter` wraps `AVAssetReader(asset: composition)` with an `AVAssetReaderVideoCompositionOutput` carrying the layer transforms, plus an `AVAssetWriter` whose video input settings come from `SplitEncoderSettings.videoOutputSettings(...)` — the exact same builder the splitter uses. Audio is re-encoded to AAC (stereo, 48 kHz, 192 kbps) via an `AVAssetReaderAudioMixOutput` decoding to LPCM and a writer input with AAC settings. Matches the Python `aformat`/`aresample`/AAC chain.
+6. **Finalize**: reader and writer status checked; any failure throws a typed `ExportError`.
+
+Notable simplifications versus the splitter's re-encode path: no PTS offset retiming (composition timeline already starts at zero) and no custom fps resampler (`AVVideoComposition.frameDuration` handles target fps natively).
+
+Supporting types live in `Services/Merge/`:
+- `MergeCompatibilityChecker`, `CompositionBuilder` — pure static namespaces.
+- `MergePassthroughExporter`, `MergeReencodeExporter` — actors.
+
+The `MergeConfig` model type lives in `Models/MergeConfig.swift` alongside the `AppState.buildMergeConfig()` builder extension. The H.264 quality slider is anchored to `max(estimatedDataRate)` across inputs rather than a single source bitrate, since a merge by definition has N potential anchors.
+
+Known forward-compatibility note: `CompositionBuilder.swift` uses the deprecated `AVMutableVideoComposition` class family (superseded in macOS 26 by `AVVideoComposition.Configuration`). Deprecation is acknowledged in-file; migration is tracked in TODO.md.
+
 ### State Management
 
 - `AppState` is an `@Observable @MainActor` class injected via SwiftUI's `@Environment`. It holds UI state, per-video transient state (trim/cuts/overlay), and the video file list.
@@ -99,30 +124,31 @@ The `SplitConfig` model type lives in `Models/SplitConfig.swift` alongside the `
 
 ### Key Services
 
-- **`PythonRunner`** (actor, `Services/PythonRunner.swift`): Finds Python binary (UserDefaults override, then miniforge/miniconda/anaconda/homebrew/system paths), finds scripts (UserDefaults override, then app bundle, then fallback paths), manages subprocess lifecycle. Has methods for `runSeparator` and `runMerger`. The prior `runGifConverter`, `runSplitter`, and their `Script.gif` / `Script.splitter` enum cases were removed when the GIF and splitter paths went native.
-- **`VideoProber`** (actor, `Services/VideoProber.swift`): Wraps `ffprobe` to extract `VideoMetadata` structs. Auto-discovers ffprobe at `/usr/local/bin`, `/opt/homebrew/bin`, or `/usr/bin`. Still used by separate/merge and the Metadata inspector; GIF and Split probe the source natively via `AVURLAsset` / `VideoFrameExtractor.probe(url:)`.
+- **`PythonRunner`** (actor, `Services/PythonRunner.swift`): Finds Python binary (UserDefaults override, then miniforge/miniconda/anaconda/homebrew/system paths), finds scripts (UserDefaults override, then app bundle, then fallback paths), manages subprocess lifecycle. Has a single method `runSeparator`. The prior `runGifConverter`, `runSplitter`, `runMerger`, and their corresponding `Script.gif` / `Script.splitter` / `Script.merger` enum cases were removed when those paths went native.
+- **`VideoProber`** (actor, `Services/VideoProber.swift`): Wraps `ffprobe` to extract `VideoMetadata` structs. Auto-discovers ffprobe at `/usr/local/bin`, `/opt/homebrew/bin`, or `/usr/bin`. Still used by Separate A/V and the Metadata inspector; GIF, Split, and Merge probe sources natively via `AVURLAsset`.
 - **`FileRenamer`** (actor, `Services/FileRenamer.swift`): Two-pass rename (original -> temp -> final) to avoid rename chain collisions. Pure Swift, no Python dependency.
 - **`GifRenderer`** (actor, `Services/GifRenderer.swift`): Top-level orchestrator for the native GIF pipeline. See the Native GIF Pipeline section above.
 - **`VideoSplitter`** (actor, `Services/VideoSplitter.swift`): Top-level orchestrator for the native splitter. See the Native Splitter Pipeline section above.
+- **`VideoMerger`** (actor, `Services/VideoMerger.swift`): Top-level orchestrator for the native merger. See the Native Merger Pipeline section above.
 - **`Services/Gif/*`**: Supporting types for the GIF pipeline. `KeepSegmentCalculator`, `ResolutionCalculator`, `ColorParser`, `FontResolver` are pure static namespaces. `VideoFrameExtractor`, `AnimatedImageWriter` are actors. `TextOverlayRenderer` is a pure static namespace that draws into a caller-supplied CGContext using a standard bottom-left-origin coordinate contract.
 - **`Services/Split/*`**: Supporting types for the splitter pipeline. `SplitSegmentCalculator`, `SplitEncoderSettings` are pure static namespaces. `SegmentPassthroughExporter` and `SegmentReencodeExporter` are actors wrapping `AVAssetExportSession` and `AVAssetReader`/`AVAssetWriter` respectively.
+- **`Services/Merge/*`**: Supporting types for the merger pipeline. `MergeCompatibilityChecker`, `CompositionBuilder` are pure static namespaces. `MergePassthroughExporter` and `MergeReencodeExporter` are actors wrapping `AVAssetExportSession` (on a composition) and `AVAssetReader`/`AVAssetWriter` respectively. `SplitEncoderSettings.videoOutputSettings` is reused directly — codec/quality mapping is identical across splitter and merger.
 
 ### Python Scripts
 
-Two bundled scripts in `VideoTools/Scripts/`:
+One bundled script in `VideoTools/Scripts/`:
 - `video_audio_separator_batch.py` — extracts video and audio streams separately
-- `video_merger.py` — concatenates multiple videos
 
-The legacy `video_to_gif.py` was removed when the native GIF pipeline landed. `video_splitter_batch.py` was removed when the native splitter landed.
+The legacy `video_to_gif.py` was removed when the native GIF pipeline landed. `video_splitter_batch.py` was removed when the native splitter landed. `video_merger.py` was removed when the native merger landed. When Separate A/V eventually goes native, the Scripts directory and all Python dependencies can be deleted entirely.
 
-All surviving scripts share the same IPC pattern: read JSON config from stdin, emit JSON event lines to stdout. They use `ProcessPoolExecutor` for parallel segment processing.
+The surviving script shares the same IPC pattern established by its predecessors: read JSON config from stdin, emit JSON event lines to stdout. It uses `ProcessPoolExecutor` for parallel per-file processing.
 
 ## Runtime Dependencies
 
-- **Python 3** with ffmpeg accessible on PATH (required for separate, merge)
+- **Python 3** with ffmpeg accessible on PATH (required for Separate A/V only)
 - **ffmpeg / ffprobe** (installed via Homebrew: `brew install ffmpeg`)
 - Python path and scripts path are configurable in the app's Settings window (stored in `UserDefaults` as `pythonPath` and `scriptsPath`)
-- The GIF and Split paths have no external runtime dependencies; AVFoundation, CoreMedia, and ImageIO ship with macOS.
+- The GIF, Split, and Merge paths have no external runtime dependencies; AVFoundation, CoreMedia, and ImageIO ship with macOS.
 
 ## Project Conventions
 

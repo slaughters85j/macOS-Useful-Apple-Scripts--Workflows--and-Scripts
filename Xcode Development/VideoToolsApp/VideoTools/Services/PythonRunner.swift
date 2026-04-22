@@ -6,14 +6,13 @@ actor PythonRunner {
     
     enum Script {
         case separator
-        case merger
 
         var filename: String {
             switch self {
-            // Splitter (video_splitter_batch.py) was removed when the
-            // splitter went native via `VideoSplitter` + `Services/Split/*`.
+            // Splitter (video_splitter_batch.py) and merger (video_merger.py)
+            // were removed when their pipelines went native. Only the
+            // Separate A/V mode still uses Python.
             case .separator: return "video_audio_separator_batch.py"
-            case .merger: return "video_merger.py"
             }
         }
     }
@@ -57,13 +56,9 @@ actor PythonRunner {
         try await runScript(.separator, config: config, onEvent: onEvent)
     }
     
-    func runMerger(
-        config: MergerConfig,
-        onEvent: @escaping @Sendable (ProcessingEvent) -> Void
-    ) async throws {
-        try await runScript(.merger, config: config, onEvent: onEvent)
-    }
-    
+    // `runMerger` and the top-level `MergerConfig` type were removed when
+    // the merger went native. See `VideoMerger` and `Models/MergeConfig.swift`.
+
     func cancel() {
         currentProcess?.terminate()
         currentProcess = nil

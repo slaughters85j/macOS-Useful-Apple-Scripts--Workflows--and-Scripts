@@ -168,9 +168,14 @@ struct ProcessButton: View {
     
     @MainActor
     private func runMerger() async throws {
+        // Native AVFoundation merger. Replaces the Python subprocess path
+        // that previously lived here. The UI contract is unchanged; this
+        // function still builds a config from AppState and streams
+        // ProcessingEvent values into handleEvent.
         let config = appState.buildMergeConfig()
+        let merger = VideoMerger()
 
-        try await runner.runMerger(config: config) { event in
+        try await merger.merge(config: config) { event in
             Task { @MainActor in
                 handleEvent(event)
             }

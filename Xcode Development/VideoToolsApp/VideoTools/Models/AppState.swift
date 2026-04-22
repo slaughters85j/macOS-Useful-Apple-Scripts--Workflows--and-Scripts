@@ -204,29 +204,10 @@ final class AppState {
         videoFiles.move(fromOffsets: source, toOffset: destination)
     }
 
-    func buildMergeConfig() -> MergerConfig {
-        let outputDir: String
-        if mergeOutputLocation == .custom, let customDir = mergeCustomOutputDir {
-            outputDir = customDir.path
-        } else {
-            outputDir = videoFiles.first.map {
-                URL(fileURLWithPath: $0.path).deletingLastPathComponent().path
-            } ?? "."
-        }
-
-        return MergerConfig(
-            files: videoFiles.map(\.path),
-            config: .init(
-                output_filename: mergeOutputFilename,
-                aspect_mode: mergeAspectMode.configValue,
-                output_codec: mergeOutputCodec.configValue,
-                quality_mode: mergeQualityMode.configValue,
-                quality_value: mergeQualityValue,
-                fps_value: mergeFpsValue,
-                output_dir: outputDir
-            )
-        )
-    }
+    // buildMergeConfig() moved to Models/MergeConfig.swift when the merger
+    // went native. The legacy method returned the Codable `MergerConfig`;
+    // the new method returns the Sendable `MergeConfig` consumed by
+    // `VideoMerger`.
 
     // MARK: - Rename Operations
 

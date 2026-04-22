@@ -100,6 +100,17 @@ struct MergerSettingsView: View {
                         Text("Higher = better quality, larger files. 65 is visually equivalent to source for most content.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+
+                        // Same codec-specific mapping as the splitter: HEVC
+                        // uses AVVideoQualityKey (true constant quality),
+                        // H.264 uses a bitrate target scaled from the max
+                        // input bitrate. Surfaced so users aren't surprised
+                        // when flipping codecs at the same slider value.
+                        Text(toolSettings.mergeOutputCodec == .hevc
+                             ? "HEVC uses constant-quality encoding (VideoToolbox)."
+                             : "H.264 maps this to a bitrate target scaled from the highest input bitrate.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
