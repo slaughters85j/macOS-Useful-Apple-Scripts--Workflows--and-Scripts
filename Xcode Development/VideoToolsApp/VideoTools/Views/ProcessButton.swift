@@ -52,8 +52,13 @@ struct ProcessButton: View {
                 Task { await startProcessing() }
             }
         } message: {
-            let count = appState.activeRenameFolder?.discoveredFiles.count ?? 0
-            Text("Rename \(count) file\(count == 1 ? "" : "s")? This cannot be undone.")
+            if appState.renameSubMode == .findReplace {
+                let count = appState.findReplaceMatchCount
+                Text("Rename \(count) file\(count == 1 ? "" : "s")? This cannot be undone.")
+            } else {
+                let count = appState.activeRenameFolder?.discoveredFiles.count ?? 0
+                Text("Rename \(count) file\(count == 1 ? "" : "s")? This cannot be undone.")
+            }
         }
     }
     
@@ -204,6 +209,15 @@ struct ProcessButton: View {
 
     @MainActor
     private func runRename() async {
+        if appState.renameSubMode == .findReplace {
+            await runFindReplaceRename()
+        } else {
+            await runFolderRename()
+        }
+    }
+
+    @MainActor
+    private func runFolderRename() async {
         guard let folder = appState.activeRenameFolder else {
             appState.processingStatus = .error("No folder selected")
             return
@@ -224,6 +238,34 @@ struct ProcessButton: View {
         // Refresh the folder to show updated state
         if result.successCount > 0 {
             appState.selectFolder(url: folder.url, forMode: appState.selectedMode)
+        }
+    }
+
+    @MainActor
+    private func runFindReplaceRename() async {
+        // Only rename files that actually changed
+        let filesToRename = appState.findReplaceFiles.filter { $0.proposedName != $0.originalName }
+
+        guard !filesToRename.isEmpty else {
+            appState.processingStatus = .error("No files match the find text")
+            return
+        }
+
+        let hasCollisions = filesToRename.contains { $0.status == .collision }
+        if hasCollisions {
+            appState.processingStatus = .error("Resolve naming collisions before renaming")
+            return
+        }
+
+        let result = await renamer.performRenames(files: filesToRename)
+        appState.processingStatus = .completed(
+            successful: result.successCount,
+            failed: result.failCount
+        )
+
+        // Clear the file list on success since files have been renamed in-place
+        if result.successCount > 0 {
+            appState.clearFindReplaceFiles()
         }
     }
 

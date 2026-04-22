@@ -20,6 +20,8 @@ struct GifSettingsView: View {
                             trimStart: $state.gifTrimStart,
                             trimEnd: $state.gifTrimEnd,
                             cutSegments: $state.gifCutSegments,
+                            textOverlay: $state.gifTextOverlay,
+                            showTextEditor: $state.gifShowTextEditor,
                             duration: duration,
                             videoURL: url
                         )
@@ -33,9 +35,35 @@ struct GifSettingsView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
-                
+
+                // MARK: - Text Overlay Section
+                if let overlay = appState.gifTextOverlay {
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        sectionHeader("Text Overlay", icon: "textformat")
+
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(overlay.text)
+                                    .font(.body.weight(.medium))
+                                    .lineLimit(1)
+                                Text(overlay.displayRange)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Edit") {
+                                state.gifShowTextEditor = true
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+
                 Divider()
-                
+
                 // MARK: - Resolution Section
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader("Resolution", icon: "aspectratio")
@@ -226,8 +254,14 @@ struct GifSettingsView: View {
             }
             .padding()
         }
+        .sheet(isPresented: $state.gifShowTextEditor) {
+            TextOverlayEditorView(
+                textOverlay: $state.gifTextOverlay,
+                isPresented: $state.gifShowTextEditor
+            )
+        }
     }
-    
+
     // MARK: - Helpers
     
     private func sectionHeader(_ title: String, icon: String) -> some View {
