@@ -2,9 +2,12 @@ import SwiftUI
 
 struct MergerSettingsView: View {
     @Environment(AppState.self) private var appState
+    @Environment(ToolSettingsViewModel.self) private var toolSettings
+    @State private var showingRestoreConfirmation = false
 
     var body: some View {
         @Bindable var state = appState
+        @Bindable var settings = toolSettings
 
         VStack(alignment: .leading, spacing: 24) {
             // MARK: - Output File
@@ -18,7 +21,7 @@ struct MergerSettingsView: View {
 
                     Spacer()
 
-                    TextField("merged_output", text: $state.mergeOutputFilename)
+                    TextField("merged_output", text: $settings.mergeOutputFilename)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 200)
                         .multilineTextAlignment(.trailing)
@@ -36,7 +39,7 @@ struct MergerSettingsView: View {
 
             sectionHeader("Aspect Ratio Handling", icon: "aspectratio")
 
-            Picker("Aspect", selection: $state.mergeAspectMode) {
+            Picker("Aspect", selection: $settings.mergeAspectMode) {
                 ForEach(MergeAspectMode.allCases) { mode in
                     Text(mode.rawValue).tag(mode)
                 }
@@ -59,14 +62,14 @@ struct MergerSettingsView: View {
 
             sectionHeader("Output Codec", icon: "film")
 
-            Picker("Codec", selection: $state.mergeOutputCodec) {
+            Picker("Codec", selection: $settings.mergeOutputCodec) {
                 ForEach(OutputCodec.allCases) { codec in
                     Text(codec.rawValue).tag(codec)
                 }
             }
             .pickerStyle(.segmented)
 
-            if appState.mergeOutputCodec == .copy {
+            if toolSettings.mergeOutputCodec == .copy {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
@@ -77,20 +80,20 @@ struct MergerSettingsView: View {
                 .padding(10)
                 .background(.orange.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
             } else {
-                Picker("Rate Control", selection: $state.mergeQualityMode) {
+                Picker("Rate Control", selection: $settings.mergeQualityMode) {
                     ForEach(QualityMode.allCases) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
 
-                if appState.mergeQualityMode == .quality {
+                if toolSettings.mergeQualityMode == .quality {
                     VStack(spacing: 4) {
                         HStack {
                             Text("Quality")
                                 .foregroundStyle(.secondary)
-                            Slider(value: $state.mergeQualityValue, in: 1...100, step: 1)
-                            Text("\(Int(appState.mergeQualityValue))")
+                            Slider(value: $settings.mergeQualityValue, in: 1...100, step: 1)
+                            Text("\(Int(toolSettings.mergeQualityValue))")
                                 .monospacedDigit()
                                 .frame(width: 30)
                         }
@@ -114,14 +117,14 @@ struct MergerSettingsView: View {
 
                     Spacer()
 
-                    TextField("FPS", value: $state.mergeFpsValue, format: .number)
+                    TextField("FPS", value: $settings.mergeFpsValue, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 100)
                         .multilineTextAlignment(.trailing)
                 }
             }
-            .disabled(appState.mergeOutputCodec == .copy)
-            .opacity(appState.mergeOutputCodec == .copy ? 0.4 : 1.0)
+            .disabled(toolSettings.mergeOutputCodec == .copy)
+            .opacity(toolSettings.mergeOutputCodec == .copy ? 0.4 : 1.0)
 
             Divider()
 
@@ -168,12 +171,30 @@ struct MergerSettingsView: View {
                 }
             }
 
+            Divider()
+
+            Button("Restore Defaults") {
+                showingRestoreConfirmation = true
+            }
+            .buttonStyle(.bordered)
+            .confirmationDialog(
+                "Restore Merge defaults?",
+                isPresented: $showingRestoreConfirmation
+            ) {
+                Button("Restore Defaults", role: .destructive) {
+                    toolSettings.restoreMergeDefaults()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will reset Merge settings to their defaults.")
+            }
+
             Spacer()
         }
     }
 
     private var aspectModeDescription: String {
-        switch appState.mergeAspectMode {
+        switch toolSettings.mergeAspectMode {
         case .letterbox:
             return "Pads with black bars to preserve all content when input resolutions differ."
         case .cropFill:
@@ -190,6 +211,7 @@ struct MergerSettingsView: View {
 #Preview {
     MergerSettingsView()
         .environment(AppState())
+        .environment(ToolSettingsViewModel())
         .frame(width: 350)
         .padding()
 }

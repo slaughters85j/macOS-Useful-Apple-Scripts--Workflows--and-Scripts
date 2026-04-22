@@ -1,6 +1,16 @@
 import Foundation
 
-enum PythonEvent: Sendable {
+// MARK: - ProcessingEvent
+
+/// Events emitted by processing operations (Python subprocess pipelines and
+/// native pipelines like `GifRenderer`) for consumption by the UI layer.
+///
+/// Named `ProcessingEvent` as part of the native GIF pipeline migration away
+/// from Python. The `parse` static method is still used by `PythonRunner` to
+/// decode JSON events from the surviving Python scripts (splitter, separator,
+/// merger); native pipelines construct the cases directly without going
+/// through JSON.
+enum ProcessingEvent: Sendable {
     case start(totalFiles: Int, hardwareAcceleration: Bool)
     case progress(currentFile: Int, totalFiles: Int, filename: String)
     case fileStart(file: String, path: String)
@@ -10,34 +20,34 @@ enum PythonEvent: Sendable {
     case segmentComplete(file: String, segment: Int, total: Int, output: String)
     case complete(totalFiles: Int, successful: Int, failed: Int)
     case error(message: String)
-    
-    static func parse(_ jsonLine: String) -> PythonEvent? {
+
+    static func parse(_ jsonLine: String) -> ProcessingEvent? {
         guard let data = jsonLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let eventType = json["event"] as? String else {
             return nil
         }
-        
+
         switch eventType {
         case "start":
             return .start(
                 totalFiles: json["total_files"] as? Int ?? 0,
                 hardwareAcceleration: json["hardware_acceleration"] as? Bool ?? false
             )
-            
+
         case "progress":
             return .progress(
                 currentFile: json["current_file"] as? Int ?? 0,
                 totalFiles: json["total_files"] as? Int ?? 0,
                 filename: json["filename"] as? String ?? ""
             )
-            
+
         case "file_start":
             return .fileStart(
                 file: json["file"] as? String ?? "",
                 path: json["path"] as? String ?? ""
             )
-            
+
         case "file_complete":
             return .fileComplete(
                 file: json["file"] as? String ?? "",
@@ -46,20 +56,20 @@ enum PythonEvent: Sendable {
                 segmentsCompleted: json["segments_completed"] as? Int,
                 segmentsTotal: json["segments_total"] as? Int
             )
-            
+
         case "file_error":
             return .fileError(
                 file: json["file"] as? String ?? "",
                 error: json["error"] as? String ?? "Unknown error"
             )
-            
+
         case "segment_start":
             return .segmentStart(
                 file: json["file"] as? String ?? "",
                 segment: json["segment"] as? Int ?? 0,
                 total: json["total"] as? Int ?? 0
             )
-            
+
         case "segment_complete":
             return .segmentComplete(
                 file: json["file"] as? String ?? "",
@@ -67,19 +77,19 @@ enum PythonEvent: Sendable {
                 total: json["total"] as? Int ?? 0,
                 output: json["output"] as? String ?? ""
             )
-            
+
         case "complete":
             return .complete(
                 totalFiles: json["total_files"] as? Int ?? 0,
                 successful: json["successful"] as? Int ?? 0,
                 failed: json["failed"] as? Int ?? 0
             )
-            
+
         case "error":
             return .error(message: json["message"] as? String ?? "Unknown error")
-            
+
         default:
             return nil
         }
-    }
-}
+    } // parse
+} // ProcessingEvent

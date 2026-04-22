@@ -7,14 +7,12 @@ actor PythonRunner {
     enum Script {
         case splitter
         case separator
-        case gif
         case merger
 
         var filename: String {
             switch self {
             case .splitter: return "video_splitter_batch.py"
             case .separator: return "video_audio_separator_batch.py"
-            case .gif: return "video_to_gif.py"
             case .merger: return "video_merger.py"
             }
         }
@@ -63,7 +61,7 @@ actor PythonRunner {
         qualityMode: String,
         qualityValue: Double,
         outputFolderMode: String,
-        onEvent: @escaping @Sendable (PythonEvent) -> Void
+        onEvent: @escaping @Sendable (ProcessingEvent) -> Void
     ) async throws {
         let config = SplitterConfig(
             files: files,
@@ -91,7 +89,7 @@ actor PythonRunner {
         sampleRates: [String: Int],
         audioChannels: Int,
         parallelJobs: Int,
-        onEvent: @escaping @Sendable (PythonEvent) -> Void
+        onEvent: @escaping @Sendable (ProcessingEvent) -> Void
     ) async throws {
         let config = SeparatorConfig(
             files: files,
@@ -107,16 +105,9 @@ actor PythonRunner {
         try await runScript(.separator, config: config, onEvent: onEvent)
     }
     
-    func runGifConverter(
-        config: GifConfig,
-        onEvent: @escaping @Sendable (PythonEvent) -> Void
-    ) async throws {
-        try await runScript(.gif, config: config, onEvent: onEvent)
-    }
-
     func runMerger(
         config: MergerConfig,
-        onEvent: @escaping @Sendable (PythonEvent) -> Void
+        onEvent: @escaping @Sendable (ProcessingEvent) -> Void
     ) async throws {
         try await runScript(.merger, config: config, onEvent: onEvent)
     }
@@ -129,7 +120,7 @@ actor PythonRunner {
     private func runScript<T: Encodable>(
         _ script: Script,
         config: T,
-        onEvent: @escaping @Sendable (PythonEvent) -> Void
+        onEvent: @escaping @Sendable (ProcessingEvent) -> Void
     ) async throws {
         let pythonPath = try findPython()
         let scriptPath = try findScript(script)
@@ -163,7 +154,7 @@ actor PythonRunner {
 
         for try await line in handle.bytes.lines {
             print("PythonRunner: Received line: \(line.prefix(100))")
-            if let event = PythonEvent.parse(line) {
+            if let event = ProcessingEvent.parse(line) {
                 onEvent(event)
             }
         }

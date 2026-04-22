@@ -12,26 +12,6 @@ enum GifResolutionMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-// MARK: - GIF Dither Method
-
-enum GifDitherMethod: String, CaseIterable, Identifiable {
-    case none = "None"
-    case bayer = "Bayer"
-    case floydSteinberg = "Floyd-Steinberg"
-    case sierra = "Sierra"
-
-    var id: String { rawValue }
-
-    var ffmpegValue: String {
-        switch self {
-        case .none: return "none"
-        case .bayer: return "bayer"
-        case .floydSteinberg: return "floyd_steinberg"
-        case .sierra: return "sierra2_4a"
-        }
-    }
-}
-
 // MARK: - GIF Loop Mode
 
 enum GifLoopMode: String, CaseIterable, Identifiable {
@@ -47,7 +27,6 @@ enum GifLoopMode: String, CaseIterable, Identifiable {
 enum GifOutputFormat: String, CaseIterable, Identifiable {
     case gif = "GIF"
     case apng = "APNG"
-    case webp = "WebP"
 
     var id: String { rawValue }
 
@@ -55,15 +34,8 @@ enum GifOutputFormat: String, CaseIterable, Identifiable {
         switch self {
         case .gif:  return "gif"
         case .apng: return "png"
-        case .webp: return "webp"
         }
     }
-
-    /// GIF only — requires two-pass palette generation
-    var supportsColorPalette: Bool { self == .gif }
-
-    /// WebP only — exposes lossy quality slider
-    var supportsQualitySlider: Bool { self == .webp }
 }
 
 // MARK: - Cut Segment
@@ -290,9 +262,6 @@ struct GifSettings: Codable {
 
     var loopMode: String = "infinite"
     var loopCount: Int = 3
-
-    var ditherMethod: String = "floyd_steinberg"
-    var colorCount: Int = 256
 
     var trimStart: Double = 0
     var trimEnd: Double? = nil

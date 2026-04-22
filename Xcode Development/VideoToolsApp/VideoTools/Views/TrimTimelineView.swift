@@ -23,6 +23,8 @@ private enum TimelineStyle {
 // MARK: - Trim Timeline View
 
 struct TrimTimelineView: View {
+    @Environment(ToolSettingsViewModel.self) private var toolSettings
+
     @Binding var trimStart: Double
     @Binding var trimEnd: Double?
     @Binding var cutSegments: [CutSegment]
@@ -491,7 +493,11 @@ struct TrimTimelineView: View {
         let start = trimStart + trimRange * 0.25
         let end = trimStart + trimRange * 0.75
 
-        textOverlay = TextOverlay(startTime: start, endTime: end)
+        textOverlay = TextOverlay(
+            startTime: start,
+            endTime: end,
+            fontName: toolSettings.gifTextFontName
+        )
         showTextEditor = true
 
         // Move scrubber to the middle of the text region
@@ -624,6 +630,7 @@ struct TrimTimelineView: View {
         duration: 30.0,
         videoURL: nil
     )
+    .environment(ToolSettingsViewModel())
     .frame(width: 400)
     .padding()
 }

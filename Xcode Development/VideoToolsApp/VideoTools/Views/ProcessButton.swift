@@ -187,9 +187,10 @@ struct ProcessButton: View {
     
     @MainActor
     private func runGifConverter() async throws {
-        let config = appState.buildGifConfig()
+        let config = appState.buildGifRenderConfig()
+        let renderer = GifRenderer()
         
-        try await runner.runGifConverter(config: config) { event in
+        try await renderer.render(config: config) { event in
             Task { @MainActor in
                 handleEvent(event)
             }
@@ -270,7 +271,7 @@ struct ProcessButton: View {
     }
 
     @MainActor
-    private func handleEvent(_ event: PythonEvent) {
+    private func handleEvent(_ event: ProcessingEvent) {
         switch event {
         case .start:
             break

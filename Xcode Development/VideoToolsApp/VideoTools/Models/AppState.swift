@@ -62,10 +62,8 @@ final class AppState {
     var gifSpeedMultiplier: Double = 1.0
     var gifLoopMode: GifLoopMode = .infinite
     var gifLoopCount: Int = 3
-    var gifDitherMethod: GifDitherMethod = .floydSteinberg
-    var gifColorCount: Double = 256
     var gifOutputFormat: GifOutputFormat = .gif
-    var gifWebPQuality: Double = 80
+    var gifTextFontName: String = CuratedFont.helvetica.rawValue
     var gifTrimStart: Double = 0
     var gifTrimEnd: Double? = nil
     var gifCutSegments: [CutSegment] = []

@@ -2,9 +2,12 @@ import SwiftUI
 
 struct GifSettingsView: View {
     @Environment(AppState.self) private var appState
+    @Environment(ToolSettingsViewModel.self) private var toolSettings
+    @State private var showingRestoreConfirmation = false
     
     var body: some View {
         @Bindable var state = appState
+        @Bindable var settings = toolSettings
         // Force re-render when metadata loads asynchronously
         let _ = appState.updateVersion
 
@@ -68,14 +71,14 @@ struct GifSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader("Resolution", icon: "aspectratio")
                     
-                    Picker("Mode", selection: $state.gifResolutionMode) {
+                    Picker("Mode", selection: $settings.gifResolutionMode) {
                         ForEach(GifResolutionMode.allCases) { mode in
                             Text(mode.rawValue).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
                     
-                    switch state.gifResolutionMode {
+                    switch toolSettings.gifResolutionMode {
                     case .original:
                         Text("Output will match source video dimensions")
                             .font(.caption)
@@ -86,9 +89,9 @@ struct GifSettingsView: View {
                             Text("Scale")
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Slider(value: $state.gifScalePercent, in: 10...100, step: 5)
+                            Slider(value: $settings.gifScalePercent, in: 10...100, step: 5)
                                 .frame(width: 150)
-                            Text("\(Int(state.gifScalePercent))%")
+                            Text("\(Int(toolSettings.gifScalePercent))%")
                                 .monospacedDigit()
                                 .frame(width: 45, alignment: .trailing)
                         }
@@ -98,7 +101,7 @@ struct GifSettingsView: View {
                             Text("Width (px)")
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            TextField("Width", value: $state.gifFixedWidth, format: .number)
+                            TextField("Width", value: $settings.gifFixedWidth, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 100)
                                 .multilineTextAlignment(.trailing)
@@ -111,11 +114,11 @@ struct GifSettingsView: View {
                         HStack {
                             Text("Width")
                                 .foregroundStyle(.secondary)
-                            TextField("W", value: $state.gifCustomWidth, format: .number)
+                            TextField("W", value: $settings.gifCustomWidth, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
                             Text("×")
-                            TextField("H", value: $state.gifCustomHeight, format: .number)
+                            TextField("H", value: $settings.gifCustomHeight, format: .number)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 80)
                             Text("px")
@@ -134,7 +137,7 @@ struct GifSettingsView: View {
                         Text("Frame Rate")
                             .foregroundStyle(.secondary)
                         Spacer()
-                        TextField("FPS", value: $state.gifFrameRate, format: .number)
+                        TextField("FPS", value: $settings.gifFrameRate, format: .number)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
                             .multilineTextAlignment(.trailing)
@@ -150,7 +153,7 @@ struct GifSettingsView: View {
                         Text("Speed")
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Picker("Speed", selection: $state.gifSpeedMultiplier) {
+                        Picker("Speed", selection: $settings.gifSpeedMultiplier) {
                             Text("0.5×").tag(0.5)
                             Text("0.75×").tag(0.75)
                             Text("1×").tag(1.0)
@@ -169,7 +172,7 @@ struct GifSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader("Quality", icon: "paintpalette")
 
-                    Picker("Format", selection: $state.gifOutputFormat) {
+                    Picker("Format", selection: $settings.gifOutputFormat) {
                         ForEach(GifOutputFormat.allCases) { format in
                             Text(format.rawValue).tag(format)
                         }
@@ -177,53 +180,19 @@ struct GifSettingsView: View {
                     .pickerStyle(.segmented)
 
                     Text({
-                        switch state.gifOutputFormat {
-                        case .gif:  return "GIF supports max 256 colors. Fewer = smaller file."
+                        switch toolSettings.gifOutputFormat {
+                        case .gif:  return "GIF: max 256 colors, widest compatibility."
                         case .apng: return "APNG: full 24-bit color, lossless. Larger files."
-                        case .webp: return "WebP: full color, lossy compression. Best size/quality tradeoff."
                         }
                     }())
                         .font(.caption)
                         .foregroundStyle(.tertiary)
 
-                    if state.gifOutputFormat.supportsQualitySlider {
-                        HStack {
-                            Text("Quality")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Slider(value: $state.gifWebPQuality, in: 1...100, step: 1)
-                                .frame(width: 150)
-                            Text("\(Int(state.gifWebPQuality))")
-                                .monospacedDigit()
-                                .frame(width: 35, alignment: .trailing)
-                        }
-                    }
-
-                    if state.gifOutputFormat.supportsColorPalette {
-                        HStack {
-                            Text("Colors")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Slider(value: $state.gifColorCount, in: 16...256, step: 16)
-                                .frame(width: 150)
-                            Text("\(Int(state.gifColorCount))")
-                                .monospacedDigit()
-                                .frame(width: 35, alignment: .trailing)
-                        }
-
-                        HStack {
-                            Text("Dithering")
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Picker("Dither", selection: $state.gifDitherMethod) {
-                                ForEach(GifDitherMethod.allCases) { method in
-                                    Text(method.rawValue).tag(method)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 140)
-                        }
-                    }
+                    // Palette and dithering controls were removed when the
+                    // native ImageIO path replaced Pillow. ImageIO manages GIF
+                    // palette and dithering internally without exposing tunables.
+                    // See AnimatedImageWriter's Future Work comment for the
+                    // design notes on reintroducing these if needed.
                 }
                 
                 Divider()
@@ -232,22 +201,40 @@ struct GifSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader("Looping", icon: "repeat")
                     
-                    Picker("Loop", selection: $state.gifLoopMode) {
+                    Picker("Loop", selection: $settings.gifLoopMode) {
                         ForEach(GifLoopMode.allCases) { mode in
                             Text(mode.rawValue).tag(mode)
                         }
                     }
                     .pickerStyle(.segmented)
                     
-                    if state.gifLoopMode == .custom {
+                    if toolSettings.gifLoopMode == .custom {
                         HStack {
                             Text("Loop Count")
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Stepper("\(state.gifLoopCount)", value: $state.gifLoopCount, in: 1...100)
+                            Stepper("\(toolSettings.gifLoopCount)", value: $settings.gifLoopCount, in: 1...100)
                                 .frame(width: 120)
                         }
                     }
+                }
+
+                Divider()
+
+                Button("Restore Defaults") {
+                    showingRestoreConfirmation = true
+                }
+                .buttonStyle(.bordered)
+                .confirmationDialog(
+                    "Restore GIF defaults?",
+                    isPresented: $showingRestoreConfirmation
+                ) {
+                    Button("Restore Defaults", role: .destructive) {
+                        toolSettings.restoreGifDefaults()
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("This will reset GIF settings to their defaults.")
                 }
                 
                 Spacer()
@@ -259,6 +246,7 @@ struct GifSettingsView: View {
                 textOverlay: $state.gifTextOverlay,
                 isPresented: $state.gifShowTextEditor
             )
+            .environment(toolSettings)
         }
     }
 
@@ -273,6 +261,7 @@ struct GifSettingsView: View {
 #Preview {
     GifSettingsView()
         .environment(AppState())
+        .environment(ToolSettingsViewModel())
         .frame(width: 380)
         .padding()
 }

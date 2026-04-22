@@ -2,22 +2,24 @@ import SwiftUI
 
 struct SeparatorSettingsView: View {
     @Environment(AppState.self) private var appState
+    @Environment(ToolSettingsViewModel.self) private var toolSettings
+    @State private var showingRestoreConfirmation = false
     
     var body: some View {
-        @Bindable var state = appState
+        @Bindable var settings = toolSettings
         
         VStack(alignment: .leading, spacing: 24) {
             sectionHeader("Audio Sample Rate", icon: "waveform")
             
-            Picker("Mode", selection: $state.sampleRateMode) {
+            Picker("Mode", selection: $settings.sampleRateMode) {
                 ForEach(SampleRateMode.allCases) { mode in
                     Text(mode.rawValue).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
             
-            if appState.sampleRateMode == .single {
-                Picker("Sample Rate", selection: $state.sampleRate) {
+            if toolSettings.sampleRateMode == .single {
+                Picker("Sample Rate", selection: $settings.sampleRate) {
                     ForEach(SampleRate.allCases) { rate in
                         Text(rate.displayName).tag(rate)
                     }
@@ -31,14 +33,14 @@ struct SeparatorSettingsView: View {
 
             sectionHeader("Audio Channels", icon: "speaker.wave.2")
 
-            Picker("Channels", selection: $state.audioChannelMode) {
+            Picker("Channels", selection: $settings.audioChannelMode) {
                 ForEach(AudioChannelMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
 
-            if appState.audioChannelMode == .mono {
+            if toolSettings.audioChannelMode == .mono {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle")
                         .foregroundStyle(.blue)
@@ -81,8 +83,8 @@ struct SeparatorSettingsView: View {
                 Spacer()
                 
                 Stepper(
-                    "\(appState.parallelJobs)",
-                    value: $state.parallelJobs,
+                    "\(toolSettings.parallelJobs)",
+                    value: $settings.parallelJobs,
                     in: 1...8
                 )
                 .frame(width: 120)
@@ -91,6 +93,24 @@ struct SeparatorSettingsView: View {
             Text("Each file is processed in parallel. Higher values use more resources.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+
+            Divider()
+
+            Button("Restore Defaults") {
+                showingRestoreConfirmation = true
+            }
+            .buttonStyle(.bordered)
+            .confirmationDialog(
+                "Restore Separate A/V defaults?",
+                isPresented: $showingRestoreConfirmation
+            ) {
+                Button("Restore Defaults", role: .destructive) {
+                    toolSettings.restoreSeparateDefaults()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This will reset Separate A/V settings to their defaults.")
+            }
             
             Spacer()
         }
@@ -148,6 +168,7 @@ struct SeparatorSettingsView: View {
 #Preview {
     SeparatorSettingsView()
         .environment(AppState())
+        .environment(ToolSettingsViewModel())
         .frame(width: 350)
         .padding()
 }

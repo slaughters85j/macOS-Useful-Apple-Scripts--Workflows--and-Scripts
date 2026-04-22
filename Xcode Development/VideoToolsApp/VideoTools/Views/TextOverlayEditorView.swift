@@ -5,6 +5,8 @@ import SwiftUI
 /// A sheet for editing text overlay content and styling.
 /// Provides controls for text, font, color, shadow, and gradient settings.
 struct TextOverlayEditorView: View {
+    @Environment(ToolSettingsViewModel.self) private var toolSettings
+
     @Binding var textOverlay: TextOverlay?
     @Binding var isPresented: Bool
 
@@ -91,7 +93,7 @@ struct TextOverlayEditorView: View {
                 Text("Family")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Picker("Font", selection: bindingFor(\.fontName)) {
+                Picker("Font", selection: fontNameBinding) {
                     ForEach(CuratedFont.allCases) { font in
                         Text(font.displayName).tag(font.rawValue)
                     }
@@ -281,6 +283,16 @@ struct TextOverlayEditorView: View {
     private func sectionLabel(_ title: String) -> some View {
         Text(title)
             .font(.subheadline.weight(.semibold))
+    }
+
+    private var fontNameBinding: Binding<String> {
+        Binding(
+            get: { textOverlay?.fontName ?? toolSettings.gifTextFontName },
+            set: { newValue in
+                textOverlay?.fontName = newValue
+                toolSettings.gifTextFontName = newValue
+            }
+        )
     }
 
     /// Creates a binding to a writable key path on the optional TextOverlay

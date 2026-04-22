@@ -144,21 +144,18 @@ struct FindReplacePickerView: View {
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        var urls: [URL] = []
-        let group = DispatchGroup()
-
-        for provider in providers {
-            group.enter()
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
-                defer { group.leave() }
-                guard let data = data as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                urls.append(url)
+        Task {
+            var urls: [URL] = []
+            for provider in providers {
+                if let data = try? await provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier),
+                   let data = data as? Data,
+                   let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    urls.append(url)
+                }
             }
-        }
-
-        group.notify(queue: .main) {
-            appState.addFindReplaceFiles(urls: urls)
+            await MainActor.run {
+                appState.addFindReplaceFiles(urls: urls)
+            }
         }
         return true
     }
