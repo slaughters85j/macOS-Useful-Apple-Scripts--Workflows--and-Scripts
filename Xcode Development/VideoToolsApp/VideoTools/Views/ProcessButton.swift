@@ -113,45 +113,14 @@ struct ProcessButton: View {
     
     @MainActor
     private func runSplitter() async throws {
-        let files = appState.videoFiles.map(\.path)
-        
-        var fpsValues: [String: Double] = [:]
-        if appState.fpsMode == .perFile {
-            for file in appState.videoFiles {
-                if let customFPS = file.customFPS {
-                    fpsValues[file.filename] = customFPS
-                }
-            }
-        }
-        
-        // Re-encode only sends 1 segment (full video, no split)
-        let splitMethod: String
-        let splitValue: Double
-        switch appState.splitMethod {
-        case .duration:
-            splitMethod = "duration"
-            splitValue = appState.splitValueInSeconds
-        case .segments:
-            splitMethod = "segments"
-            splitValue = appState.splitValue
-        case .reencodeOnly:
-            splitMethod = "segments"
-            splitValue = 1
-        }
+        // Native AVFoundation splitter. Replaces the Python subprocess path
+        // that previously lived here. The UI contract is unchanged; this
+        // function still builds a config from AppState and streams
+        // ProcessingEvent values into handleEvent.
+        let config = appState.buildSplitConfig()
+        let splitter = VideoSplitter()
 
-        try await runner.runSplitter(
-            files: files,
-            splitMethod: splitMethod,
-            splitValue: splitValue,
-            fpsMode: appState.fpsMode == .single ? "single" : "per_file",
-            fpsValue: appState.fpsValue,
-            fpsValues: fpsValues,
-            parallelJobs: appState.parallelJobs,
-            outputCodec: appState.outputCodec.configValue,
-            qualityMode: appState.qualityMode.configValue,
-            qualityValue: appState.qualityValue,
-            outputFolderMode: appState.outputFolderMode.configValue
-        ) { event in
+        try await splitter.split(config: config) { event in
             Task { @MainActor in
                 handleEvent(event)
             }

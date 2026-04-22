@@ -124,6 +124,17 @@ struct SplitterSettingsView: View {
                         Text("Higher = better quality, larger files. 65 is visually equivalent to source for most content.")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+
+                        // Native AVFoundation exposes constant-quality on HEVC
+                        // (VideoToolbox AVVideoQualityKey) but not on H.264, so
+                        // the slider mapping differs by codec. Surface this
+                        // explicitly so users aren't surprised by divergent
+                        // output sizes when flipping codecs at the same slider.
+                        Text(toolSettings.outputCodec == .hevc
+                             ? "HEVC uses constant-quality encoding (VideoToolbox)."
+                             : "H.264 maps this to a bitrate target scaled from source bitrate.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }

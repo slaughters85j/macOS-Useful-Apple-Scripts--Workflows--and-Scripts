@@ -5,37 +5,19 @@ actor PythonRunner {
     private var currentProcess: Process?
     
     enum Script {
-        case splitter
         case separator
         case merger
 
         var filename: String {
             switch self {
-            case .splitter: return "video_splitter_batch.py"
+            // Splitter (video_splitter_batch.py) was removed when the
+            // splitter went native via `VideoSplitter` + `Services/Split/*`.
             case .separator: return "video_audio_separator_batch.py"
             case .merger: return "video_merger.py"
             }
         }
     }
-    
-    struct SplitterConfig: Encodable {
-        let files: [String]
-        let config: SplitterSettings
-        
-        struct SplitterSettings: Encodable {
-            let split_method: String
-            let split_value: Double
-            let fps_mode: String
-            let fps_value: Double
-            let fps_values: [String: Double]
-            let parallel_jobs: Int
-            let output_codec: String
-            let quality_mode: String
-            let quality_value: Double
-            let output_folder_mode: String
-        }
-    }
-    
+
     struct SeparatorConfig: Encodable {
         let files: [String]
         let config: SeparatorSettings
@@ -49,39 +31,9 @@ actor PythonRunner {
         }
     }
     
-    func runSplitter(
-        files: [String],
-        splitMethod: String,
-        splitValue: Double,
-        fpsMode: String,
-        fpsValue: Double,
-        fpsValues: [String: Double],
-        parallelJobs: Int,
-        outputCodec: String,
-        qualityMode: String,
-        qualityValue: Double,
-        outputFolderMode: String,
-        onEvent: @escaping @Sendable (ProcessingEvent) -> Void
-    ) async throws {
-        let config = SplitterConfig(
-            files: files,
-            config: .init(
-                split_method: splitMethod,
-                split_value: splitValue,
-                fps_mode: fpsMode,
-                fps_value: fpsValue,
-                fps_values: fpsValues,
-                parallel_jobs: parallelJobs,
-                output_codec: outputCodec,
-                quality_mode: qualityMode,
-                quality_value: qualityValue,
-                output_folder_mode: outputFolderMode
-            )
-        )
-        
-        try await runScript(.splitter, config: config, onEvent: onEvent)
-    }
-    
+    // `runSplitter` and its `SplitterConfig` were removed when the splitter
+    // went native. See `VideoSplitter` and `Models/SplitConfig.swift`.
+
     func runSeparator(
         files: [String],
         sampleRateMode: String,

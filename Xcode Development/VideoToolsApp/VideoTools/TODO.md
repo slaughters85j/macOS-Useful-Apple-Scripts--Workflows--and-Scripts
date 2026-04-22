@@ -1,6 +1,6 @@
 # TODO
 
-Open items from the native GIF pipeline migration and related cleanup. Ordered roughly by priority; none is blocking the app from running.
+Open items from the native GIF and splitter migrations and related cleanup. Ordered roughly by priority; none is blocking the app from running.
 
 ## Small cleanup candidates (deferred)
 
@@ -25,7 +25,9 @@ Not urgent. The other GIF subsystem files are already under the ceiling.
 
 ## Validation (to close out the migration)
 
-- [ ] End-to-end visual and size comparison. Render a handful of representative videos (short clip, long clip, with cuts, with text overlay, with speed multiplier, at several resolutions) through both the legacy Python pipeline (git checkout prior to the native migration) and the current native pipeline. Compare output dimensions, frame counts, file sizes, and visual quality. Document any differences worth noting.
+- [ ] End-to-end visual and size comparison (GIF). Render a handful of representative videos (short clip, long clip, with cuts, with text overlay, with speed multiplier, at several resolutions) through both the legacy Python pipeline (git checkout prior to the native migration) and the current native pipeline. Compare output dimensions, frame counts, file sizes, and visual quality. Document any differences worth noting.
+- [ ] End-to-end visual and size comparison (splitter). For each split mode (duration, segments, reencode-only) and each codec (copy, H.264, HEVC) plus the match-bitrate and quality-slider variants, run the same clip through the native splitter and the archived Python version. Verify segment durations (within one keyframe interval for copy, within one frame for re-encode), audio sync, and file-size ballpark. Especially confirm the HEVC constant-quality and H.264 bitrate mappings feel sensible on the quality slider.
+- [ ] Time the splitter export end-to-end. Confirm the Python-startup dead-time is gone (first output file should appear within ~200 ms of clicking Process, not ~3 s).
 
 ## Test infrastructure
 
@@ -33,4 +35,12 @@ Not urgent. The other GIF subsystem files are already under the ceiling.
 
 ## Possible follow-ons in other subsystems
 
-- [ ] Native replacement of `video_splitter_batch.py`, `video_audio_separator_batch.py`, and `video_merger.py` with AVFoundation-based pipelines. The GIF migration established the architectural pattern (Swift actor orchestrator, pure-math helpers, `ProcessingEvent` callback, `ToolSettingsViewModel` persistence). Each of the three remaining scripts is a candidate for the same treatment. Not scoped to the current work package.
+- [x] Native replacement of `video_splitter_batch.py` (completed; see `Services/VideoSplitter.swift` and `Services/Split/*`).
+- [ ] Native replacement of `video_audio_separator_batch.py`. Likely built on `AVAssetReader` + `AVAssetWriter` (audio-only), reusing the retiming helpers in `SegmentReencodeExporter` as a template. Not scoped to the current work package.
+- [ ] Native replacement of `video_merger.py`. Concatenation via `AVMutableComposition` + `AVAssetExportSession` is the obvious path. The existing `MergerConfig` type already models the knobs. Not scoped to the current work package.
+
+## Splitter follow-ups
+
+- [ ] Cancel-button wiring for native pipelines. Pressing Cancel today calls `PythonRunner.cancel()`, which is a no-op for the native GIF and splitter paths (no subprocess to terminate). Native paths already check `Task.checkCancellation()` at every await point; they just need the outer `Task` reference held by `ProcessButton` so `.cancel()` can be called on it. Applies equally to the GIF path and now the split path.
+- [ ] Consider exposing an output-resolution control on the splitter re-encode path. Not present today; `ResolutionCalculator` from the GIF subsystem is directly reusable if we add it.
+- [ ] Honest per-codec quality slider. HEVC's `AVVideoQualityKey` is true constant-quality; H.264's mapping is a linear scaling of source bitrate with a 100 kbps floor. Revisit the H.264 curve if users complain that low-slider values still produce large files on high-bitrate source material.

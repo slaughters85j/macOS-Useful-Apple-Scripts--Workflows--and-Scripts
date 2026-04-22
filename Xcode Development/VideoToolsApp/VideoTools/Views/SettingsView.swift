@@ -249,14 +249,12 @@ struct SettingsView: View {
         isValidatingScripts = true
         scriptsError = nil
         
-        let splitterPath = (path as NSString).appendingPathComponent("video_splitter_batch.py")
+        // Note: video_splitter_batch.py was removed when the splitter went
+        // native via VideoSplitter. Only separator and merger still use Python.
         let separatorPath = (path as NSString).appendingPathComponent("video_audio_separator_batch.py")
         let mergerPath = (path as NSString).appendingPathComponent("video_merger.py")
 
         var missing: [String] = []
-        if !FileManager.default.fileExists(atPath: splitterPath) {
-            missing.append("video_splitter_batch.py")
-        }
         if !FileManager.default.fileExists(atPath: separatorPath) {
             missing.append("video_audio_separator_batch.py")
         }
