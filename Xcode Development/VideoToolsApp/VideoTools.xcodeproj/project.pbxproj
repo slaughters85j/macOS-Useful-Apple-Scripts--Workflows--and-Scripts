@@ -6,6 +6,16 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		AA000019 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA00000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA000002;
+			remoteInfo = VideoTools;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		AA000001 /* VideoTools.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoTools.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA000011 /* VideoToolsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VideoToolsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -74,24 +84,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
-
-/* Begin PBXContainerItemProxy section */
-		AA000019 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = AA00000A /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = AA000002;
-			remoteInfo = VideoTools;
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXTargetDependency section */
-		AA00001A /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = AA000002 /* VideoTools */;
-			targetProxy = AA000019 /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin PBXNativeTarget section */
 		AA000002 /* VideoTools */ = {
@@ -201,6 +193,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA00001A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA000002 /* VideoTools */;
+			targetProxy = AA000019 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA00000C /* Debug */ = {
