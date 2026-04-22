@@ -8,6 +8,7 @@
 
 /* Begin PBXFileReference section */
 		AA000001 /* VideoTools.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoTools.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000011 /* VideoToolsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VideoToolsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -29,10 +30,22 @@
 			path = VideoTools;
 			sourceTree = "<group>";
 		};
+		AA000015 /* VideoToolsTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = VideoToolsTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		AA000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000014 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -46,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				AA000003 /* VideoTools */,
+				AA000015 /* VideoToolsTests */,
 				AA000006 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,11 +68,30 @@
 			isa = PBXGroup;
 			children = (
 				AA000001 /* VideoTools.app */,
+				AA000011 /* VideoToolsTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		AA000019 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA00000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA000002;
+			remoteInfo = VideoTools;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		AA00001A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA000002 /* VideoTools */;
+			targetProxy = AA000019 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXNativeTarget section */
 		AA000002 /* VideoTools */ = {
@@ -83,6 +116,26 @@
 			productReference = AA000001 /* VideoTools.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA000012 /* VideoToolsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA000018 /* Build configuration list for PBXNativeTarget "VideoToolsTests" */;
+			buildPhases = (
+				AA000013 /* Sources */,
+				AA000014 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA00001A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA000015 /* VideoToolsTests */,
+			);
+			name = VideoToolsTests;
+			productName = VideoToolsTests;
+			productReference = AA000011 /* VideoToolsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -95,6 +148,10 @@
 				TargetAttributes = {
 					AA000002 = {
 						CreatedOnToolsVersion = 16.2;
+					};
+					AA000012 = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = AA000002;
 					};
 				};
 			};
@@ -113,6 +170,7 @@
 			projectRoot = "";
 			targets = (
 				AA000002 /* VideoTools */,
+				AA000012 /* VideoToolsTests */,
 			);
 		};
 /* End PBXProject section */
@@ -129,6 +187,13 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		AA000008 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA000013 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -332,6 +397,41 @@
 			};
 			name = Release;
 		};
+		AA000016 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = KNK7DF7Q76;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.UBSAnalytics.VideoToolsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoTools.app/Contents/MacOS/VideoTools";
+			};
+			name = Debug;
+		};
+		AA000017 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = KNK7DF7Q76;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.UBSAnalytics.VideoToolsTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoTools.app/Contents/MacOS/VideoTools";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -349,6 +449,15 @@
 			buildConfigurations = (
 				AA00000C /* Debug */,
 				AA00000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA000018 /* Build configuration list for PBXNativeTarget "VideoToolsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000016 /* Debug */,
+				AA000017 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

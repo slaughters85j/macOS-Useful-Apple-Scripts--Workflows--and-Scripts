@@ -182,8 +182,8 @@ actor AnimatedImageWriter {
     ///   Non-RGB images are converted by ImageIO but pay a performance cost;
     ///   callers should pre-convert in the compose step for best throughput.
     func appendFrame(_ image: CGImage) throws {
-        guard let dest = destination else { throw WriterError.appendBeforeBegin }
         guard !finalized else { throw WriterError.appendAfterFinalize }
+        guard let dest = destination else { throw WriterError.appendBeforeBegin }
 
         let frameProps: CFDictionary
         switch format {

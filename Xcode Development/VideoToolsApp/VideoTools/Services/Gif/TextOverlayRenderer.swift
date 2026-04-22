@@ -58,10 +58,14 @@ enum TextOverlayRenderer {
             italic: overlay.isItalic
         )
 
-        // Build the attributed string once for measurement and solid-color drawing
+        // Build the attributed string once for measurement and solid-color drawing.
+        // Use kCTForegroundColorAttributeName (expects CGColor) rather than the AppKit
+        // NSForegroundColorAttributeName (expects NSColor). Both keys are accepted by
+        // Core Text, but using the CT key lets drawSolidText use CTLineDraw without
+        // going through NSGraphicsContext.
         let baseAttrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: overlay.textColor.cgColor
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): overlay.textColor.cgColor
         ]
         let attrString = NSAttributedString(string: text, attributes: baseAttrs)
         let textSize = attrString.size()
@@ -147,16 +151,21 @@ enum TextOverlayRenderer {
 
     /// Draw a solid-color attributed string into the context at the given origin.
     /// Shadow (if any) is inherited from the context state set by the caller.
+    ///
+    /// Uses CTLineDraw rather than NSAttributedString.draw(at:) to avoid the
+    /// NSGraphicsContext requirement, which is unreliable in headless and test
+    /// environments on macOS 26.
     private static func drawSolidText(
         attrString: NSAttributedString,
         origin: CGPoint,
         in context: CGContext
     ) {
-        NSGraphicsContext.saveGraphicsState()
-        let ns = NSGraphicsContext(cgContext: context, flipped: false)
-        NSGraphicsContext.current = ns
-        attrString.draw(at: origin)
-        NSGraphicsContext.restoreGraphicsState()
+        let line = CTLineCreateWithAttributedString(attrString)
+        context.saveGState()
+        context.textMatrix = .identity
+        context.textPosition = origin
+        CTLineDraw(line, context)
+        context.restoreGState()
     } // drawSolidText
 
     // MARK: - Gradient Drawing
@@ -187,18 +196,19 @@ enum TextOverlayRenderer {
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
               ) else { return }
 
-        // Draw opaque white text onto the mask bitmap
+        // Draw opaque white text onto the mask bitmap via CTLineDraw, avoiding
+        // the NSGraphicsContext dependency. kCTForegroundColorAttributeName accepts
+        // CGColor directly; no NSColor needed.
+        let whiteCGColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
         let maskAttrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor.white
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): whiteCGColor
         ]
         let maskString = NSAttributedString(string: text, attributes: maskAttrs)
-
-        NSGraphicsContext.saveGraphicsState()
-        let ns = NSGraphicsContext(cgContext: maskContext, flipped: false)
-        NSGraphicsContext.current = ns
-        maskString.draw(at: .zero)
-        NSGraphicsContext.restoreGraphicsState()
+        let maskLine = CTLineCreateWithAttributedString(maskString)
+        maskContext.textMatrix = .identity
+        maskContext.textPosition = .zero
+        CTLineDraw(maskLine, maskContext)
 
         guard let maskImage = maskContext.makeImage() else { return }
 
