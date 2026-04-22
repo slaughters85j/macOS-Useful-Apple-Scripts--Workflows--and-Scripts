@@ -38,7 +38,21 @@ Input JSON Schema:
         "cut_segments": [  // segments to REMOVE
             {"start": 5.0, "end": 8.0},
             {"start": 15.0, "end": 17.0}
-        ]
+        ],
+        "text_overlay": {  // optional styled text overlay
+            "text": "Hello World",
+            "start": 1.0, "end": 5.0,
+            "x": 0.5, "y": 0.5,
+            "font_size": 48, "font_name": "Helvetica",
+            "bold": false, "italic": false,
+            "color": "0xFFFFFF@1.0",
+            "shadow": true, "shadow_color": "0x000000@1.0",
+            "shadow_x": 2, "shadow_y": 2,
+            "gradient_enabled": false,
+            "gradient_start_color": "#FFFFFF",
+            "gradient_end_color": "#0099FF",
+            "gradient_angle": 0
+        }
     }
 }
 
@@ -56,6 +70,314 @@ from enum import Enum
 from typing import Optional, List, Tuple
 
 sys.stdout.reconfigure(line_buffering=True)
+
+
+# MARK: - Font mapping (curated list of macOS system fonts)
+FONT_MAP = {
+    "Helvetica": "/System/Library/Fonts/Helvetica.ttc",
+    "Arial": "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "Courier": "/System/Library/Fonts/Courier.dfont",
+    "Courier New": "/System/Library/Fonts/Supplemental/Courier New.ttf",
+    "Georgia": "/System/Library/Fonts/Supplemental/Georgia.ttf",
+    "Times New Roman": "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+    "Menlo": "/System/Library/Fonts/Menlo.ttc",
+    "SF Pro": "/System/Library/Fonts/SFNS.ttf",
+    "Avenir": "/System/Library/Fonts/Avenir.ttc",
+    "Futura": "/System/Library/Fonts/Supplemental/Futura.ttc",
+    "Didot": "/System/Library/Fonts/Supplemental/Didot.ttc",
+    "Palatino": "/System/Library/Fonts/Supplemental/Palatino.ttc",
+    "Optima": "/System/Library/Fonts/Supplemental/Optima.ttc",
+    "Trebuchet MS": "/System/Library/Fonts/Supplemental/Trebuchet MS.ttf",
+    "Verdana": "/System/Library/Fonts/Supplemental/Verdana.ttf",
+    "Impact": "/System/Library/Fonts/Supplemental/Impact.ttf",
+}
+
+# Bold/Italic font file variants for common fonts
+FONT_STYLE_MAP = {
+    "Arial": {
+        (True, False): "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        (False, True): "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
+        (True, True): "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
+    },
+    "Courier New": {
+        (True, False): "/System/Library/Fonts/Supplemental/Courier New Bold.ttf",
+        (False, True): "/System/Library/Fonts/Supplemental/Courier New Italic.ttf",
+        (True, True): "/System/Library/Fonts/Supplemental/Courier New Bold Italic.ttf",
+    },
+    "Georgia": {
+        (True, False): "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+        (False, True): "/System/Library/Fonts/Supplemental/Georgia Italic.ttf",
+        (True, True): "/System/Library/Fonts/Supplemental/Georgia Bold Italic.ttf",
+    },
+    "Times New Roman": {
+        (True, False): "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+        (False, True): "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf",
+        (True, True): "/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf",
+    },
+    "Trebuchet MS": {
+        (True, False): "/System/Library/Fonts/Supplemental/Trebuchet MS Bold.ttf",
+        (False, True): "/System/Library/Fonts/Supplemental/Trebuchet MS Italic.ttf",
+        (True, True): "/System/Library/Fonts/Supplemental/Trebuchet MS Bold Italic.ttf",
+    },
+    "Verdana": {
+        (True, False): "/System/Library/Fonts/Supplemental/Verdana Bold.ttf",
+        (False, True): "/System/Library/Fonts/Supplemental/Verdana Italic.ttf",
+        (True, True): "/System/Library/Fonts/Supplemental/Verdana Bold Italic.ttf",
+    },
+}
+
+
+def find_font_file(font_name: str, bold: bool = False, italic: bool = False) -> str:
+    """Resolve a font display name + style to a file path on macOS."""
+    # Check for style-specific variant first
+    style_key = (bold, italic)
+    if style_key != (False, False) and font_name in FONT_STYLE_MAP:
+        variant = FONT_STYLE_MAP[font_name].get(style_key)
+        if variant and os.path.isfile(variant):
+            return variant
+
+    # Fall back to base font
+    base = FONT_MAP.get(font_name)
+    if base and os.path.isfile(base):
+        return base
+
+    # Last resort: Helvetica
+    fallback = "/System/Library/Fonts/Helvetica.ttc"
+    return fallback if os.path.isfile(fallback) else "Helvetica"
+
+
+def adjust_overlay_time(
+    overlay: dict,
+    keep_segments: List[Tuple[float, float]]
+) -> Optional[Tuple[float, float]]:
+    """
+    Map text overlay start/end times from the original video timeline
+    to the output timeline (after trims and cuts are applied).
+
+    Returns (adjusted_start, adjusted_end) in output timeline coordinates,
+    or None if the overlay falls entirely outside kept segments.
+    """
+    overlay_start = overlay['start']
+    overlay_end = overlay['end']
+
+    # Accumulate output time as we walk through kept segments
+    output_time = 0.0
+    adjusted_start = None
+    adjusted_end = None
+
+    for seg_start, seg_end in keep_segments:
+        seg_duration = seg_end - seg_start
+
+        # Find where the overlay intersects this segment
+        visible_start = max(overlay_start, seg_start)
+        visible_end = min(overlay_end, seg_end)
+
+        if visible_start < visible_end:
+            # Overlay is visible during this segment
+            offset_in_seg = visible_start - seg_start
+            if adjusted_start is None:
+                adjusted_start = output_time + offset_in_seg
+            adjusted_end = output_time + (visible_end - seg_start)
+
+        output_time += seg_duration
+
+    if adjusted_start is not None and adjusted_end is not None:
+        return (adjusted_start, adjusted_end)
+    return None
+
+
+def build_drawtext_filter(
+    overlay: dict,
+    video_width: int,
+    video_height: int,
+    adjusted_start: float,
+    adjusted_end: float,
+    scale_filter: str
+) -> str:
+    """
+    Build an FFmpeg drawtext filter string for a single text overlay.
+    Handles font resolution, position, color, and shadow.
+    """
+    text = overlay['text'].replace("'", "'\\\\\\''").replace(":", "\\:")
+    font_path = find_font_file(
+        overlay['font_name'],
+        overlay.get('bold', False),
+        overlay.get('italic', False)
+    )
+
+    # Calculate output dimensions from scale filter
+    out_w, out_h = _parse_output_dimensions(scale_filter, video_width, video_height)
+
+    # Position: normalized (0-1) → pixel coords, centered on the text
+    # SwiftUI .position() places the view's CENTER at the coordinate,
+    # so we must subtract half text dimensions to match.
+    cx = int(overlay['x'] * out_w)
+    cy = int(overlay['y'] * out_h)
+
+    parts = [
+        f"drawtext=text='{text}'",
+        f"fontfile='{font_path}'",
+        f"fontsize={overlay['font_size']}",
+        f"fontcolor={overlay['color']}",
+        f"x={cx}-text_w/2",
+        f"y={cy}-text_h/2",
+        f"enable='between(t\\,{adjusted_start:.3f}\\,{adjusted_end:.3f})'",
+    ]
+
+    if overlay.get('shadow', False):
+        parts.append(f"shadowcolor={overlay['shadow_color']}")
+        parts.append(f"shadowx={overlay['shadow_x']}")
+        parts.append(f"shadowy={overlay['shadow_y']}")
+
+    return ":".join(parts)
+
+
+def _parse_output_dimensions(scale_filter: str, src_w: int, src_h: int) -> Tuple[int, int]:
+    """Parse output dimensions from a scale filter string like 'scale=640:480'."""
+    try:
+        parts = scale_filter.replace("scale=", "").split(":")
+        w = int(parts[0])
+        h_str = parts[1]
+        if h_str == "-2":
+            # Maintain aspect ratio, round to even
+            h = int(round(src_h * (w / src_w) / 2) * 2)
+        elif h_str == "-1":
+            h = int(round(src_h * (w / src_w)))
+        else:
+            h = int(h_str)
+        return (w, h)
+    except (ValueError, IndexError):
+        return (src_w, src_h)
+
+
+def render_gradient_text_png(
+    overlay: dict,
+    video_width: int,
+    video_height: int,
+    output_path: str,
+    scale_filter: str
+) -> bool:
+    """
+    Render text with a gradient fill as a transparent PNG using Pillow.
+    Returns True on success, False if Pillow is not available.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return False
+
+    out_w, out_h = _parse_output_dimensions(scale_filter, video_width, video_height)
+
+    # Load font
+    font_path = find_font_file(
+        overlay['font_name'],
+        overlay.get('bold', False),
+        overlay.get('italic', False)
+    )
+    try:
+        font = ImageFont.truetype(font_path, overlay['font_size'])
+    except Exception:
+        font = ImageFont.load_default()
+
+    # Create transparent canvas
+    canvas = Image.new('RGBA', (out_w, out_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    # Get text bounding box
+    text = overlay['text']
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    if text_w <= 0 or text_h <= 0:
+        return False
+
+    # Render white text on transparent background (as mask)
+    text_img = Image.new('RGBA', (text_w, text_h), (0, 0, 0, 0))
+    text_draw = ImageDraw.Draw(text_img)
+    text_draw.text((-bbox[0], -bbox[1]), text, fill=(255, 255, 255, 255), font=font)
+
+    # Create gradient
+    angle_rad = overlay.get('gradient_angle', 0) * 3.14159265 / 180.0
+
+    # Parse hex colors (#RRGGBB)
+    start_hex = overlay.get('gradient_start_color', '#FFFFFF')
+    end_hex = overlay.get('gradient_end_color', '#0099FF')
+    start_rgb = _hex_to_rgb(start_hex)
+    end_rgb = _hex_to_rgb(end_hex)
+
+    gradient = _create_gradient_image(text_w, text_h, start_rgb, end_rgb, angle_rad)
+
+    # Apply: use text alpha as mask over gradient color
+    result = Image.new('RGBA', (text_w, text_h), (0, 0, 0, 0))
+    for py in range(text_h):
+        for px in range(text_w):
+            gr, gg, gb, _ = gradient.getpixel((px, py))
+            _, _, _, ta = text_img.getpixel((px, py))
+            result.putpixel((px, py), (gr, gg, gb, ta))
+
+    # Center text at the normalized position (matching SwiftUI .position() behavior)
+    text_x = int(overlay['x'] * out_w) - text_w // 2
+    text_y = int(overlay['y'] * out_h) - text_h // 2
+
+    # Shadow (render behind text)
+    if overlay.get('shadow', False):
+        shadow_color = _hex_to_rgb(overlay.get('shadow_color', '0x000000@1.0').replace('0x', '#').split('@')[0])
+        sx = overlay.get('shadow_x', 2)
+        sy = overlay.get('shadow_y', 2)
+
+        shadow_img = Image.new('RGBA', (text_w, text_h), (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow_img)
+        shadow_draw.text((-bbox[0], -bbox[1]), text, fill=(*shadow_color, 180), font=font)
+
+        canvas.paste(shadow_img, (text_x + sx, text_y + sy), shadow_img)
+
+    # Position text on canvas (centered)
+    canvas.paste(result, (text_x, text_y), result)
+
+    canvas.save(output_path, 'PNG')
+    return True
+
+
+def _hex_to_rgb(hex_str: str) -> Tuple[int, int, int]:
+    """Convert '#RRGGBB' or '0xRRGGBB' to (R, G, B) tuple."""
+    hex_str = hex_str.lstrip('#').replace('0x', '')
+    if len(hex_str) >= 6:
+        return (int(hex_str[0:2], 16), int(hex_str[2:4], 16), int(hex_str[4:6], 16))
+    return (255, 255, 255)
+
+
+def _create_gradient_image(
+    width: int, height: int,
+    start_rgb: Tuple[int, int, int],
+    end_rgb: Tuple[int, int, int],
+    angle_rad: float
+) -> 'Image':
+    """Create a gradient image using linear interpolation along an angle."""
+    from PIL import Image
+    import math
+
+    img = Image.new('RGBA', (width, height))
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    # Project corners to find the range along the gradient axis
+    max_proj = abs(cos_a * width) + abs(sin_a * height)
+    if max_proj == 0:
+        max_proj = 1
+
+    for py in range(height):
+        for px in range(width):
+            # Project point onto gradient axis
+            proj = (px * cos_a + py * sin_a + max_proj / 2) / max_proj
+            proj = max(0.0, min(1.0, proj))
+
+            r = int(start_rgb[0] + (end_rgb[0] - start_rgb[0]) * proj)
+            g = int(start_rgb[1] + (end_rgb[1] - start_rgb[1]) * proj)
+            b = int(start_rgb[2] + (end_rgb[2] - start_rgb[2]) * proj)
+            img.putpixel((px, py), (r, g, b, 255))
+
+    return img
 
 
 class EventType(Enum):
@@ -331,6 +653,7 @@ def process_video_to_gif(
     trim_start = config.get('trim_start', 0)
     trim_end = config.get('trim_end')
     cut_segments = config.get('cut_segments', [])
+    text_overlay = config.get('text_overlay')  # Optional text overlay config
     
     # Calculate segments to keep (snap to target frame rate for precision)
     keep_segments = calculate_keep_segments(
@@ -358,6 +681,14 @@ def process_video_to_gif(
     # Speed filter (setpts for video speed)
     speed_filter = f"setpts={1.0/speed_mult}*PTS" if speed_mult != 1.0 else ""
     
+    # Pre-compute text overlay timing adjustment
+    adjusted_text_times = None
+    if text_overlay and text_overlay.get('text', '').strip():
+        adjusted_text_times = adjust_overlay_time(text_overlay, keep_segments)
+        if adjusted_text_times is None:
+            emit_event(EventType.PROGRESS, message="Text overlay falls outside kept segments, skipping")
+            text_overlay = None
+
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             # If we have multiple segments, we need to extract and concat them
@@ -419,6 +750,53 @@ def process_video_to_gif(
                 # Use trim filter for frame-accurate cutting with filter_complex
                 trim_filter = f"trim=start={start:.6f}:duration={seg_duration:.6f},setpts=PTS-STARTPTS"
 
+            # Build the text drawtext filter if applicable (non-gradient)
+            drawtext_filter = None
+            gradient_png_path = None
+            if text_overlay and adjusted_text_times and not text_overlay.get('gradient_enabled', False):
+                drawtext_filter = build_drawtext_filter(
+                    text_overlay, info['width'], info['height'],
+                    adjusted_text_times[0], adjusted_text_times[1],
+                    scale_filter
+                )
+            elif text_overlay and adjusted_text_times and text_overlay.get('gradient_enabled', False):
+                gradient_png_path = os.path.join(temp_dir, "text_overlay.png")
+                try:
+                    success = render_gradient_text_png(
+                        text_overlay, info['width'], info['height'],
+                        gradient_png_path, scale_filter
+                    )
+                except Exception as e:
+                    emit_event(EventType.PROGRESS,
+                               message=f"Gradient rendering error: {e}, using solid color")
+                    success = False
+
+                if not success:
+                    emit_event(EventType.PROGRESS,
+                               message="Gradient rendering failed (Pillow missing?), using solid color")
+                    gradient_png_path = None
+                    text_overlay['gradient_enabled'] = False
+                    drawtext_filter = build_drawtext_filter(
+                        text_overlay, info['width'], info['height'],
+                        adjusted_text_times[0], adjusted_text_times[1],
+                        scale_filter
+                    )
+                else:
+                    # Verify the PNG was actually created
+                    if not os.path.isfile(gradient_png_path) or os.path.getsize(gradient_png_path) == 0:
+                        emit_event(EventType.PROGRESS,
+                                   message="Gradient PNG is empty/missing, using solid color")
+                        gradient_png_path = None
+                        text_overlay['gradient_enabled'] = False
+                        drawtext_filter = build_drawtext_filter(
+                            text_overlay, info['width'], info['height'],
+                            adjusted_text_times[0], adjusted_text_times[1],
+                            scale_filter
+                        )
+                    else:
+                        emit_event(EventType.PROGRESS,
+                                   message=f"Gradient text PNG rendered ({os.path.getsize(gradient_png_path)} bytes)")
+
             if is_webp:
                 # --- WebP path: lossy, full color, best size/quality tradeoff ---
                 # Build filter list (shared by both FFmpeg and Pillow paths)
@@ -433,17 +811,38 @@ def process_video_to_gif(
                     if speed_filter:
                         vf_filters.insert(1, speed_filter)
 
+                # Add drawtext after scale (non-gradient text)
+                if drawtext_filter:
+                    vf_filters.append(drawtext_filter)
+
                 if check_webp_support(ffmpeg_path):
                     # FFmpeg has libwebp — direct encode
-                    cmd = [
-                        ffmpeg_path, '-y',
-                        '-i', source_for_gif,
-                        '-vf', ",".join(vf_filters),
-                        '-f', 'webp',
-                        '-quality', str(webp_quality),
-                        '-loop', str(loop_count),
-                        output_path
-                    ]
+                    if gradient_png_path:
+                        # Gradient text: use filter_complex with overlay
+                        vf_str = ",".join(vf_filters)
+                        fc = (f"[0:v]{vf_str}[v];"
+                              f"[v][1:v]overlay=0:0:"
+                              f"enable='between(t\\,{adjusted_text_times[0]:.3f}\\,{adjusted_text_times[1]:.3f})'")
+                        cmd = [
+                            ffmpeg_path, '-y',
+                            '-i', source_for_gif,
+                            '-i', gradient_png_path,
+                            '-filter_complex', fc,
+                            '-f', 'webp',
+                            '-quality', str(webp_quality),
+                            '-loop', str(loop_count),
+                            output_path
+                        ]
+                    else:
+                        cmd = [
+                            ffmpeg_path, '-y',
+                            '-i', source_for_gif,
+                            '-vf', ",".join(vf_filters),
+                            '-f', 'webp',
+                            '-quality', str(webp_quality),
+                            '-loop', str(loop_count),
+                            output_path
+                        ]
                     result = subprocess.run(cmd, capture_output=True, text=True)
                     if result.returncode != 0:
                         raise Exception(f"WebP creation failed: {result.stderr[:200]}")
@@ -473,14 +872,34 @@ def process_video_to_gif(
                     if speed_filter:
                         vf_filters.insert(1, speed_filter)
 
-                cmd = [
-                    ffmpeg_path, '-y',
-                    '-i', source_for_gif,
-                    '-vf', ",".join(vf_filters),
-                    '-f', 'apng',
-                    '-plays', str(loop_count),
-                    output_path
-                ]
+                # Add drawtext after scale (non-gradient text)
+                if drawtext_filter:
+                    vf_filters.append(drawtext_filter)
+
+                if gradient_png_path:
+                    # Gradient text: use filter_complex with overlay
+                    vf_str = ",".join(vf_filters)
+                    fc = (f"[0:v]{vf_str}[v];"
+                          f"[v][1:v]overlay=0:0:"
+                          f"enable='between(t\\,{adjusted_text_times[0]:.3f}\\,{adjusted_text_times[1]:.3f})'")
+                    cmd = [
+                        ffmpeg_path, '-y',
+                        '-i', source_for_gif,
+                        '-i', gradient_png_path,
+                        '-filter_complex', fc,
+                        '-f', 'apng',
+                        '-plays', str(loop_count),
+                        output_path
+                    ]
+                else:
+                    cmd = [
+                        ffmpeg_path, '-y',
+                        '-i', source_for_gif,
+                        '-vf', ",".join(vf_filters),
+                        '-f', 'apng',
+                        '-plays', str(loop_count),
+                        output_path
+                    ]
 
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:
@@ -496,22 +915,42 @@ def process_video_to_gif(
                     filters = [f"fps={frame_rate}", scale_filter]
                     if speed_filter:
                         filters.insert(0, speed_filter)
-                    filters.append(f"palettegen=max_colors={color_count}")
-                    palette_filter = ",".join(filters)
                 else:
                     # Single segment: apply trim filter first
                     filters = [trim_filter, f"fps={frame_rate}", scale_filter]
                     if speed_filter:
                         filters.insert(1, speed_filter)  # After trim, before fps
-                    filters.append(f"palettegen=max_colors={color_count}")
-                    palette_filter = ",".join(filters)
 
-                cmd = [
-                    ffmpeg_path, '-y',
-                    '-i', source_for_gif,
-                    '-vf', palette_filter,
-                    palette_path
-                ]
+                # Add drawtext BEFORE palettegen so text colors are in the palette
+                if drawtext_filter:
+                    filters.append(drawtext_filter)
+
+                palette_filters = filters.copy()
+                palette_filters.append(f"palettegen=max_colors={color_count}")
+                palette_filter = ",".join(palette_filters)
+
+                if gradient_png_path:
+                    # For gradient text with GIF: render to intermediate then palette
+                    # First pass: use filter_complex to overlay gradient, then palettegen
+                    base_str = ",".join(filters)
+                    fc_palette = (f"[0:v]{base_str}[v];"
+                                  f"[v][1:v]overlay=0:0:"
+                                  f"enable='between(t\\,{adjusted_text_times[0]:.3f}\\,{adjusted_text_times[1]:.3f})'[vt];"
+                                  f"[vt]palettegen=max_colors={color_count}")
+                    cmd = [
+                        ffmpeg_path, '-y',
+                        '-i', source_for_gif,
+                        '-i', gradient_png_path,
+                        '-filter_complex', fc_palette,
+                        palette_path
+                    ]
+                else:
+                    cmd = [
+                        ffmpeg_path, '-y',
+                        '-i', source_for_gif,
+                        '-vf', palette_filter,
+                        palette_path
+                    ]
 
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:
@@ -520,29 +959,33 @@ def process_video_to_gif(
                 # Create GIF using palette
                 dither_opt = f"dither={dither_method}" if dither_method != "none" else "dither=none"
 
-                if len(keep_segments) > 1:
-                    # Multi-segment: source is already trimmed/merged
-                    base_filters = [f"fps={frame_rate}", scale_filter]
-                    if speed_filter:
-                        base_filters.insert(0, speed_filter)
-                    base_filter_str = ",".join(base_filters)
-                    filter_complex = f"[0:v]{base_filter_str}[v];[v][1:v]paletteuse={dither_opt}"
-                else:
-                    # Single segment: apply trim filter in filter_complex
-                    base_filters = [trim_filter, f"fps={frame_rate}", scale_filter]
-                    if speed_filter:
-                        base_filters.insert(1, speed_filter)  # After trim, before fps
-                    base_filter_str = ",".join(base_filters)
-                    filter_complex = f"[0:v]{base_filter_str}[v];[v][1:v]paletteuse={dither_opt}"
+                base_filter_str = ",".join(filters)
 
-                cmd = [
-                    ffmpeg_path, '-y',
-                    '-i', source_for_gif,
-                    '-i', palette_path,
-                    '-filter_complex', filter_complex,
-                    '-loop', str(loop_count),
-                    output_path
-                ]
+                if gradient_png_path:
+                    # Gradient: 3 inputs (video, gradient PNG, palette)
+                    filter_complex = (f"[0:v]{base_filter_str}[v];"
+                                      f"[v][1:v]overlay=0:0:"
+                                      f"enable='between(t\\,{adjusted_text_times[0]:.3f}\\,{adjusted_text_times[1]:.3f})'[vt];"
+                                      f"[vt][2:v]paletteuse={dither_opt}")
+                    cmd = [
+                        ffmpeg_path, '-y',
+                        '-i', source_for_gif,
+                        '-i', gradient_png_path,
+                        '-i', palette_path,
+                        '-filter_complex', filter_complex,
+                        '-loop', str(loop_count),
+                        output_path
+                    ]
+                else:
+                    filter_complex = f"[0:v]{base_filter_str}[v];[v][1:v]paletteuse={dither_opt}"
+                    cmd = [
+                        ffmpeg_path, '-y',
+                        '-i', source_for_gif,
+                        '-i', palette_path,
+                        '-filter_complex', filter_complex,
+                        '-loop', str(loop_count),
+                        output_path
+                    ]
 
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode != 0:

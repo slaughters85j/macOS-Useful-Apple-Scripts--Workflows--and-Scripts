@@ -69,7 +69,9 @@ final class AppState {
     var gifTrimStart: Double = 0
     var gifTrimEnd: Double? = nil
     var gifCutSegments: [CutSegment] = []
-    
+    var gifTextOverlay: TextOverlay? = nil
+    var gifShowTextEditor: Bool = false
+
     // Merge settings
     var mergeOutputFilename: String = "merged_output"
     var mergeAspectMode: MergeAspectMode = .letterbox
@@ -183,10 +185,12 @@ final class AppState {
         withAnimation {
             videoFiles = []
         }
-        // Reset GIF trim settings
+        // Reset GIF settings
         gifTrimStart = 0
         gifTrimEnd = nil
         gifCutSegments = []
+        gifTextOverlay = nil
+        gifShowTextEditor = false
     }
     
     func updateFileProgress(fileId: String, update: (inout FileProgress) -> Void) {
@@ -537,82 +541,4 @@ final class AppState {
         metadataFile = nil
     }
 
-    // MARK: - GIF Config Builder
-    
-    func buildGifConfig() -> GifConfig {
-        let loopValue: Int = switch gifLoopMode {
-        case .infinite: 0
-        case .once: 1
-        case .custom: gifLoopCount
-        }
-        
-        let resolutionConfig: GifConfig.ResolutionConfig = switch gifResolutionMode {
-        case .original:
-            .init(mode: "original", scalePercent: nil, width: nil, height: nil)
-        case .scale:
-            .init(mode: "scale", scalePercent: Int(gifScalePercent), width: nil, height: nil)
-        case .width:
-            .init(mode: "width", scalePercent: nil, width: gifFixedWidth, height: nil)
-        case .custom:
-            .init(mode: "custom", scalePercent: nil, width: gifCustomWidth, height: gifCustomHeight)
-        }
-        
-        return GifConfig(
-            files: videoFiles.map(\.path),
-            config: .init(
-                resolution: resolutionConfig,
-                frame_rate: gifFrameRate,
-                speed_multiplier: gifSpeedMultiplier,
-                loop_count: loopValue,
-                dither_method: gifDitherMethod.ffmpegValue,
-                color_count: Int(gifColorCount),
-                output_format: gifOutputFormat.rawValue.lowercased(),
-                webp_quality: Int(gifWebPQuality),
-                trim_start: gifTrimStart,
-                trim_end: gifTrimEnd,
-                cut_segments: gifCutSegments.map { ["start": $0.startTime, "end": $0.endTime] }
-            )
-        )
-    }
-}
-
-struct GifConfig: Encodable {
-    let files: [String]
-    let config: Settings
-
-    struct Settings: Encodable {
-        let resolution: ResolutionConfig
-        let frame_rate: Double
-        let speed_multiplier: Double
-        let loop_count: Int
-        let dither_method: String
-        let color_count: Int
-        let output_format: String
-        let webp_quality: Int
-        let trim_start: Double
-        let trim_end: Double?
-        let cut_segments: [[String: Double]]
-    }
-
-    struct ResolutionConfig: Encodable {
-        let mode: String
-        let scalePercent: Int?
-        let width: Int?
-        let height: Int?
-    }
-}
-
-struct MergerConfig: Encodable {
-    let files: [String]
-    let config: Settings
-
-    struct Settings: Encodable {
-        let output_filename: String
-        let aspect_mode: String
-        let output_codec: String
-        let quality_mode: String
-        let quality_value: Double
-        let fps_value: Double
-        let output_dir: String
-    }
 }

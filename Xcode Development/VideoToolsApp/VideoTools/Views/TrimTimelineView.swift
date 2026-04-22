@@ -17,6 +17,7 @@ private enum TimelineStyle {
     static let cutMarkerTabHeight: CGFloat = 16
     static let cutMarkerTabWidth: CGFloat = 10
     static let cutMarkerHitArea: CGFloat = 30
+    static let textMarkerColor = Color.cyan
 }
 
 // MARK: - Trim Timeline View
@@ -25,9 +26,11 @@ struct TrimTimelineView: View {
     @Binding var trimStart: Double
     @Binding var trimEnd: Double?
     @Binding var cutSegments: [CutSegment]
+    @Binding var textOverlay: TextOverlay?
+    @Binding var showTextEditor: Bool
     let duration: Double
     let videoURL: URL?
-    
+
     @State private var thumbnails: [CGImage] = []
     @State private var isLoadingThumbnails = false
     @State private var scrubberPosition: Double = 0
@@ -72,6 +75,11 @@ struct TrimTimelineView: View {
 
                     // Cut segment markers (green/red) - rendered on top of trim handles
                     cutSegmentMarkers(width: width)
+
+                    // Text overlay region and markers (cyan) - rendered on top
+                    textOverlayRegion(width: width)
+                        .offset(y: TimelineStyle.cutMarkerTabHeight / 2)
+                    textOverlayMarkers(width: width)
                 }
                 .coordinateSpace(name: "timeline")
                 .onAppear {
@@ -113,6 +121,14 @@ struct TrimTimelineView: View {
                         RoundedRectangle(cornerRadius: 4)
                             .stroke(Color.white.opacity(0.3), lineWidth: 1)
                     )
+                    .overlay {
+                        // Text overlay preview (draggable)
+                        TextOverlayPreviewView(
+                            textOverlay: $textOverlay,
+                            scrubberPosition: scrubberPosition,
+                            onTap: { showTextEditor = true }
+                        )
+                    }
                     .overlay(alignment: .bottom) {
                         Text(formatTime(scrubberPosition))
                             .font(.caption.monospacedDigit())
@@ -353,9 +369,39 @@ struct TrimTimelineView: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            
+
             Spacer()
-            
+
+            // Add Text button (only if no overlay exists yet)
+            if textOverlay == nil {
+                Button {
+                    addTextOverlay()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "textformat")
+                        Text("Add Text")
+                        Circle().fill(TimelineStyle.textMarkerColor).frame(width: 8, height: 8)
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+            } else {
+                Button {
+                    textOverlay = nil
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle.fill")
+                        Text("Remove Text")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+            }
+
+            Spacer()
+
             if !cutSegments.isEmpty {
                 Button {
                     removeLastCutSegment()
@@ -367,6 +413,90 @@ struct TrimTimelineView: View {
                 .foregroundStyle(.red)
             }
         }
+    }
+
+    // MARK: - Text Overlay Region
+
+    private func textOverlayRegion(width: CGFloat) -> some View {
+        Group {
+            if let overlay = textOverlay {
+                let startX = positionToX(overlay.startTime, width: width)
+                let endX = positionToX(overlay.endTime, width: width)
+                let regionWidth = max(0, endX - startX)
+
+                Rectangle()
+                    .fill(TimelineStyle.textMarkerColor.opacity(0.15))
+                    .frame(width: regionWidth, height: TimelineStyle.thumbnailHeight)
+                    .position(x: startX + regionWidth / 2, y: TimelineStyle.height / 2)
+            }
+        }
+    }
+
+    // MARK: - Text Overlay Markers
+
+    private func textOverlayMarkers(width: CGFloat) -> some View {
+        Group {
+            if let overlay = textOverlay {
+                // Start marker (cyan)
+                textMarker(time: overlay.startTime, isStart: true, width: width)
+                // End marker (cyan)
+                textMarker(time: overlay.endTime, isStart: false, width: width)
+            }
+        }
+    }
+
+    private func textMarker(time: Double, isStart: Bool, width: CGFloat) -> some View {
+        let xPos = positionToX(time, width: width)
+        let totalHeight = TimelineStyle.height + TimelineStyle.cutMarkerTabHeight
+
+        return ZStack {
+            // Invisible wider hit area
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: TimelineStyle.cutMarkerHitArea, height: totalHeight)
+
+            // Visible marker (tab at bottom)
+            TextMarkerShape()
+                .fill(TimelineStyle.textMarkerColor)
+                .frame(width: TimelineStyle.cutMarkerTabWidth, height: totalHeight)
+                .shadow(color: .black.opacity(0.4), radius: 1, x: 0, y: 1)
+        }
+        .position(x: xPos, y: totalHeight / 2)
+        .gesture(
+            DragGesture(coordinateSpace: .named("timeline"))
+                .onChanged { value in
+                    let newTime = xToPosition(value.location.x, width: width)
+                    updateTextMarker(isStart: isStart, newTime: newTime)
+                    scrubberPosition = max(trimStart, min(newTime, effectiveEnd))
+                    updatePreviewFrame()
+                }
+        )
+    }
+
+    private func updateTextMarker(isStart: Bool, newTime: Double) {
+        guard var overlay = textOverlay else { return }
+
+        if isStart {
+            overlay.startTime = max(trimStart, min(newTime, overlay.endTime - 0.1))
+        } else {
+            overlay.endTime = max(overlay.startTime + 0.1, min(newTime, effectiveEnd))
+        }
+
+        textOverlay = overlay
+    }
+
+    private func addTextOverlay() {
+        // Place text overlay covering the middle 50% of the trim range
+        let trimRange = effectiveEnd - trimStart
+        let start = trimStart + trimRange * 0.25
+        let end = trimStart + trimRange * 0.75
+
+        textOverlay = TextOverlay(startTime: start, endTime: end)
+        showTextEditor = true
+
+        // Move scrubber to the middle of the text region
+        scrubberPosition = (start + end) / 2
+        updatePreviewFrame()
     }
     
     // MARK: - Helper Functions
@@ -482,72 +612,6 @@ struct TrimTimelineView: View {
     }
 }
 
-// MARK: - Trim Marker Shape (Yellow tab + line style)
-
-struct TrimMarkerShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let lineWidth: CGFloat = 2
-        let tabHeight: CGFloat = 12
-        let tabWidth: CGFloat = rect.width
-        let centerX = rect.midX
-
-        // Tab at top (rounded rectangle)
-        let tabRect = CGRect(
-            x: centerX - tabWidth / 2,
-            y: rect.minY,
-            width: tabWidth,
-            height: tabHeight
-        )
-        path.addRoundedRect(in: tabRect, cornerSize: CGSize(width: 3, height: 3))
-
-        // Vertical line from tab to bottom
-        let lineRect = CGRect(
-            x: centerX - lineWidth / 2,
-            y: rect.minY + tabHeight - 2,
-            width: lineWidth,
-            height: rect.height - tabHeight + 2
-        )
-        path.addRect(lineRect)
-
-        return path
-    }
-}
-
-// MARK: - Cut Marker Shape
-
-struct CutMarkerShape: Shape {
-    let isStart: Bool
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let lineWidth: CGFloat = 2
-        let tabHeight: CGFloat = 12
-        let tabWidth: CGFloat = rect.width
-        let centerX = rect.midX
-
-        // Tab at top (rounded rectangle)
-        let tabRect = CGRect(
-            x: centerX - tabWidth / 2,
-            y: rect.minY,
-            width: tabWidth,
-            height: tabHeight
-        )
-        path.addRoundedRect(in: tabRect, cornerSize: CGSize(width: 3, height: 3))
-
-        // Vertical line from tab to bottom
-        let lineRect = CGRect(
-            x: centerX - lineWidth / 2,
-            y: rect.minY + tabHeight - 2,
-            width: lineWidth,
-            height: rect.height - tabHeight + 2
-        )
-        path.addRect(lineRect)
-
-        return path
-    }
-}
-
 #Preview {
     TrimTimelineView(
         trimStart: .constant(2.0),
@@ -555,6 +619,8 @@ struct CutMarkerShape: Shape {
         cutSegments: .constant([
             CutSegment(startTime: 10, endTime: 15)
         ]),
+        textOverlay: .constant(nil),
+        showTextEditor: .constant(false),
         duration: 30.0,
         videoURL: nil
     )
