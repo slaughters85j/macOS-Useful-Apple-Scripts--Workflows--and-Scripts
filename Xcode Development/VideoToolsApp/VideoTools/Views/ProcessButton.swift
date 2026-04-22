@@ -3,7 +3,9 @@ import SwiftUI
 struct ProcessButton: View {
     @Environment(AppState.self) private var appState
 
-    private let runner = PythonRunner()
+    // PythonRunner was removed when the separator went native. The Cancel
+    // button now propagates Task cancellation through `appState.currentTask`,
+    // which all native orchestrators observe via `try Task.checkCancellation()`.
     private let renamer = FileRenamer()
 
     private var buttonLabel: String {
@@ -25,11 +27,17 @@ struct ProcessButton: View {
 
         Button {
             if appState.processingStatus == .running {
-                Task { await runner.cancel() }
+                // Cancel the active Task; native orchestrators check
+                // Task.checkCancellation() at every await and wind down.
+                appState.currentTask?.cancel()
             } else if appState.selectedMode.isFolderBased {
                 appState.showRenameConfirmation = true
             } else {
-                Task { await startProcessing() }
+                // Stash the Task so the Cancel branch above can reach it.
+                appState.currentTask = Task {
+                    await startProcessing()
+                    await MainActor.run { appState.currentTask = nil }
+                }
             }
         } label: {
             HStack(spacing: 8) {
@@ -49,7 +57,10 @@ struct ProcessButton: View {
         .alert("Confirm Rename", isPresented: $state.showRenameConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Rename", role: .destructive) {
-                Task { await startProcessing() }
+                appState.currentTask = Task {
+                    await startProcessing()
+                    await MainActor.run { appState.currentTask = nil }
+                }
             }
         } message: {
             if appState.renameSubMode == .findReplace {
@@ -129,25 +140,13 @@ struct ProcessButton: View {
     
     @MainActor
     private func runSeparator() async throws {
-        let files = appState.videoFiles.map(\.path)
-        
-        var sampleRates: [String: Int] = [:]
-        if appState.sampleRateMode == .perFile {
-            for file in appState.videoFiles {
-                if let customRate = file.customSampleRate {
-                    sampleRates[file.filename] = customRate.rawValue
-                }
-            }
-        }
-        
-        try await runner.runSeparator(
-            files: files,
-            sampleRateMode: appState.sampleRateMode == .single ? "single" : "per_file",
-            sampleRate: appState.sampleRate.rawValue,
-            sampleRates: sampleRates,
-            audioChannels: appState.audioChannelMode.rawValue,
-            parallelJobs: appState.parallelJobs
-        ) { event in
+        // Native AVFoundation separator. Replaces the Python subprocess
+        // path. Last mode in the app to go native; PythonRunner is gone
+        // after this.
+        let config = appState.buildSeparateConfig()
+        let separator = VideoSeparator()
+
+        try await separator.separate(config: config) { event in
             Task { @MainActor in
                 handleEvent(event)
             }

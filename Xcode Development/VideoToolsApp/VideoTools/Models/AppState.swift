@@ -82,6 +82,16 @@ final class AppState {
 
     // Parallel processing
     var parallelJobs: Int = 4
+
+    // Cancellation support for native processing tasks.
+    // The ProcessButton assigns its outer Task here when processing begins
+    // and calls .cancel() on it when the user presses Cancel. All native
+    // orchestrators (GifRenderer, VideoSplitter, VideoMerger, VideoSeparator)
+    // check Task.checkCancellation() at every await point, so cancellation
+    // propagates without any per-orchestrator wiring.
+    // Not observed by the UI (no @ObservationIgnored needed; Task<Void, Never>?
+    // has value semantics for Observation purposes).
+    var currentTask: Task<Void, Never>? = nil
     
     /// Split value converted to seconds for the Python script
     var splitValueInSeconds: Double {

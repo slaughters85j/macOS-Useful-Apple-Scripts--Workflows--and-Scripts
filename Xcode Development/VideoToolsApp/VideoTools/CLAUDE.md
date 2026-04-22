@@ -14,39 +14,32 @@ The Xcode project file is at the repo root: `VideoTools.xcodeproj`. There is no 
 
 ## Project Overview
 
-VideoTools is a **macOS-only SwiftUI app** (deployment target: macOS 26.0, Swift 6.0, bundle ID: `com.UBSAnalytics.VideoTools`) that provides a GUI for batch video processing operations. It is a **hybrid native-plus-Python app**: the GIF, splitter, and merger pipelines are fully native (AVFoundation + ImageIO), while Separate A/V is the only remaining mode that delegates to a bundled Python script calling `ffmpeg` / `ffprobe`.
+VideoTools is a **macOS-only SwiftUI app** (deployment target: macOS 26.0, Swift 6.0, bundle ID: `com.UBSAnalytics.VideoTools`) that provides a GUI for batch video processing operations. Every processing pipeline runs on **AVFoundation, CoreMedia, CoreVideo, and ImageIO** — frameworks built into macOS. There are no external runtime dependencies: no Python, no ffmpeg, no ffprobe. All ship-required behavior is self-contained.
 
-The native migration is nearly complete — Separate A/V is the sole remaining Python-backed mode. Any new feature should prefer native Swift unless there is a compelling reason (e.g. a third-party codec ffmpeg handles and AVFoundation does not) to stay on the Python path.
+Historical note: prior to the native migration, Split / Merge / Separate A/V delegated to bundled Python scripts that shelled out to ffmpeg, and metadata probing used ffprobe. Those paths are all gone. `PythonRunner` and the `Scripts/` directory have been deleted; the `Settings` window is a placeholder because there's nothing external to configure.
 
 ### Tool Modes
 
-Modes are declared in `ToolMode` and routed by `ContentView` and `ProcessButton`.
+Modes are declared in `ToolMode` and routed by `ContentView` and `ProcessButton`. All processing modes are native:
 
-- **Video Processing (Python-backed)**: Separate A/V
-- **Video Processing (native)**: Split, Merge, GIF (GIF or APNG output)
+- **Video Processing**: Split, Merge, Separate A/V, GIF (GIF or APNG output)
 - **File Management**: Rename Videos, Rename Photos (batch rename using folder-name prefix with collision detection, plus a Find/Replace submode)
-- **Inspection**: Metadata (ffprobe output), Media Player (in-app playback)
+- **Inspection**: Metadata (native AVFoundation probe), Media Player (in-app playback)
 
 ## Architecture
 
-There are two concurrent processing architectures in this app. Knowing which one a feature uses is essential before making changes.
+Every processing pipeline follows the same pattern — an actor orchestrator that consumes a Sendable config, emits `ProcessingEvent` values via a callback, and routes work through pure-helper namespaces and small actor exporters. The pattern was established by the GIF port, refined by the Splitter and Merger ports, and finalized by the Separator port.
 
-### 1. Swift-Python IPC Bridge (separate A/V only)
+Cross-cutting infrastructure:
+- `ProcessingEvent` (`Services/ProcessingEvent.swift`) — the shared event enum. Cases: `start`, `progress`, `fileStart`, `fileComplete`, `fileError`, `segmentStart`, `segmentComplete`, `complete`, `error`. All orchestrators emit these; the UI handler in `ProcessButton.handleEvent(_:)` is agnostic to which orchestrator produced them.
+- `AppState.currentTask: Task<Void, Never>?` — holds the outer processing task. `ProcessButton`'s Cancel button calls `.cancel()` on it, which propagates through every orchestrator's `try Task.checkCancellation()` await points.
+- Pure-helper namespaces (`enum` with static functions) for math and pure transforms; actor types for anything that touches AVFoundation reference types.
 
-The older pattern. Only `Separate A/V` still uses it; the splitter and merger have been ported to native AVFoundation.
-
-1. `PythonRunner` (Swift actor) spawns a Python subprocess, sends a JSON config blob via stdin, reads newline-delimited JSON events from stdout.
-2. The surviving Python script (`Scripts/video_audio_separator_batch.py`) reads the config from stdin, performs ffmpeg operations, emits structured event JSON lines back to Swift.
-3. `ProcessingEvent.swift` (formerly `PythonEvent.swift`) parses these JSON lines into a Swift enum with cases: `start`, `progress`, `fileStart`, `fileComplete`, `fileError`, `segmentStart`, `segmentComplete`, `complete`, `error`. The same enum is also emitted directly by native pipelines, which is why the type was renamed.
-4. `ProcessButton.swift` orchestrates: calls `PythonRunner.runSeparator` for separation, native orchestrators (`GifRenderer`, `VideoSplitter`, `VideoMerger`) for the rest, `FileRenamer` for rename operations, routes events back to `AppState`.
-
-When Separate A/V is eventually ported, `PythonRunner` can be deleted entirely. Until then, it exists solely for this one mode.
-
-### 2. Native GIF Pipeline (GIF / APNG output)
+### Native GIF Pipeline (GIF / APNG output)
 
 The newer pattern. Pure Swift, no subprocess, no ffmpeg.
 
-Entry point: `GifRenderer` (actor) exposes `render(config:onEvent:)`. It consumes a `GifRenderConfig` rather than a Python JSON payload, and emits the same `ProcessingEvent` values the UI already consumes.
+Entry point: `GifRenderer` (actor) exposes `render(config:onEvent:)`. It consumes a `GifRenderConfig` and emits `ProcessingEvent` values.
 
 Per-file pipeline stages:
 
@@ -115,6 +108,39 @@ The `MergeConfig` model type lives in `Models/MergeConfig.swift` alongside the `
 
 Known forward-compatibility note: `CompositionBuilder.swift` uses the deprecated `AVMutableVideoComposition` class family (superseded in macOS 26 by `AVVideoComposition.Configuration`). Deprecation is acknowledged in-file; migration is tracked in TODO.md.
 
+### Native Separator Pipeline (Separate A/V mode)
+
+Final native pipeline. Pure Swift, no subprocess, no ffmpeg.
+
+Entry point: `VideoSeparator` (actor) exposes `separate(config:onEvent:)`. Consumes a `SeparateConfig` and emits `ProcessingEvent` values. Produces two output files per input: a video-only file (source extension preserved) and an audio-only WAV file, inside a `<stem>_separated/` subfolder.
+
+Per-file pipeline stages:
+
+1. **Output folder**: Create `<stem>_separated/` alongside the source.
+2. **Audio track probe**: Check whether the source has any audio track up front. Files without audio still emit one `segmentStart/segmentComplete` pair (video only, `total=1`) so the UI's progress strip counts correctly.
+3. **Concurrent extraction**: Video and audio run in parallel via `async let`:
+   - **Video**: `VideoStreamExtractor` builds an `AVMutableComposition` with only the video track (source `preferredTransform` preserved) and exports via `AVAssetExportSession(preset: Passthrough)`. Lossless — no generation loss, no forced codec change, output container matches source extension. Strictly better than the legacy Python path, which re-encoded via H.264 VideoToolbox.
+   - **Audio**: `AudioStreamExtractor` wraps `AVAssetReader` decoding to 16-bit signed LE LPCM (via `AVSampleRateKey` / `AVNumberOfChannelsKey` in the reader settings, letting CoreAudio do sample-rate conversion and channel remixing internally) and `AVAssetWriter` writing to a WAV container. Always produces `.wav`; no AAC fallback needed.
+4. **Per-file sample rate override**: Resolved via `SeparateConfig.effectiveSampleRate(for:)`, keyed by `URL.lastPathComponent`. Same convention as the legacy path.
+
+Across the batch, up to `config.parallelJobs` files run concurrently via a `TaskGroup`. Within each file, video and audio extraction run concurrently regardless of `parallelJobs`.
+
+Supporting types live in `Services/Separate/`:
+- `CodecNameResolver` — pure static FourCC → ffprobe-style codec name mapping (also used by the native `VideoProber`).
+- `VideoStreamExtractor`, `AudioStreamExtractor` — actors.
+
+The `SeparateConfig` model type lives in `Models/SeparateConfig.swift` alongside the `AppState.buildSeparateConfig()` builder extension.
+
+### Native Metadata Probing (Metadata tool)
+
+`VideoProber` (`Services/VideoProber.swift`) is an AVFoundation-based metadata extractor that populates the same `VideoMetadata` struct shape the UI has always consumed. Public signature is `probe(url:) async -> VideoMetadata?` — unchanged from the ffprobe era.
+
+Core fields (duration, resolution, codec FourCC → name, bit rate, frame rate, audio codec/channels/sample rate/bit rate) come directly from `AVURLAsset` + `AVAssetTrack` property loads.
+
+**Best-effort extended fields** (pixelFormat, colorSpace, bitDepth) come from `CMFormatDescriptionGetExtensions()`. For common codecs (H.264, HEVC, ProRes) they populate; for exotic codecs they may return nil and the UI renders a dash. This is the documented trade-off for dropping ffprobe as a runtime dependency.
+
+`CodecNameResolver` maps CoreMedia FourCCs (avc1, hvc1, mp4a, apcn, etc.) to lowercase ffprobe-style names (h264, hevc, aac, prores) so the UI text stays stable.
+
 ### State Management
 
 - `AppState` is an `@Observable @MainActor` class injected via SwiftUI's `@Environment`. It holds UI state, per-video transient state (trim/cuts/overlay), and the video file list.
@@ -124,24 +150,16 @@ Known forward-compatibility note: `CompositionBuilder.swift` uses the deprecated
 
 ### Key Services
 
-- **`PythonRunner`** (actor, `Services/PythonRunner.swift`): Finds Python binary (UserDefaults override, then miniforge/miniconda/anaconda/homebrew/system paths), finds scripts (UserDefaults override, then app bundle, then fallback paths), manages subprocess lifecycle. Has a single method `runSeparator`. The prior `runGifConverter`, `runSplitter`, `runMerger`, and their corresponding `Script.gif` / `Script.splitter` / `Script.merger` enum cases were removed when those paths went native.
-- **`VideoProber`** (actor, `Services/VideoProber.swift`): Wraps `ffprobe` to extract `VideoMetadata` structs. Auto-discovers ffprobe at `/usr/local/bin`, `/opt/homebrew/bin`, or `/usr/bin`. Still used by Separate A/V and the Metadata inspector; GIF, Split, and Merge probe sources natively via `AVURLAsset`.
-- **`FileRenamer`** (actor, `Services/FileRenamer.swift`): Two-pass rename (original -> temp -> final) to avoid rename chain collisions. Pure Swift, no Python dependency.
+- **`VideoProber`** (actor, `Services/VideoProber.swift`): Native AVFoundation metadata prober. Populates `VideoMetadata` structs via `AVURLAsset` + `CMFormatDescription` extension extraction. Previously wrapped ffprobe; rewritten to eliminate the external-binary dependency. Best-effort for pixelFormat / colorSpace / bitDepth.
+- **`FileRenamer`** (actor, `Services/FileRenamer.swift`): Two-pass rename (original -> temp -> final) to avoid rename chain collisions. Pure Swift.
 - **`GifRenderer`** (actor, `Services/GifRenderer.swift`): Top-level orchestrator for the native GIF pipeline. See the Native GIF Pipeline section above.
 - **`VideoSplitter`** (actor, `Services/VideoSplitter.swift`): Top-level orchestrator for the native splitter. See the Native Splitter Pipeline section above.
 - **`VideoMerger`** (actor, `Services/VideoMerger.swift`): Top-level orchestrator for the native merger. See the Native Merger Pipeline section above.
+- **`VideoSeparator`** (actor, `Services/VideoSeparator.swift`): Top-level orchestrator for the native separator. See the Native Separator Pipeline section above.
 - **`Services/Gif/*`**: Supporting types for the GIF pipeline. `KeepSegmentCalculator`, `ResolutionCalculator`, `ColorParser`, `FontResolver` are pure static namespaces. `VideoFrameExtractor`, `AnimatedImageWriter` are actors. `TextOverlayRenderer` is a pure static namespace that draws into a caller-supplied CGContext using a standard bottom-left-origin coordinate contract.
 - **`Services/Split/*`**: Supporting types for the splitter pipeline. `SplitSegmentCalculator`, `SplitEncoderSettings` are pure static namespaces. `SegmentPassthroughExporter` and `SegmentReencodeExporter` are actors wrapping `AVAssetExportSession` and `AVAssetReader`/`AVAssetWriter` respectively.
 - **`Services/Merge/*`**: Supporting types for the merger pipeline. `MergeCompatibilityChecker`, `CompositionBuilder` are pure static namespaces. `MergePassthroughExporter` and `MergeReencodeExporter` are actors wrapping `AVAssetExportSession` (on a composition) and `AVAssetReader`/`AVAssetWriter` respectively. `SplitEncoderSettings.videoOutputSettings` is reused directly — codec/quality mapping is identical across splitter and merger.
-
-### Python Scripts
-
-One bundled script in `VideoTools/Scripts/`:
-- `video_audio_separator_batch.py` — extracts video and audio streams separately
-
-The legacy `video_to_gif.py` was removed when the native GIF pipeline landed. `video_splitter_batch.py` was removed when the native splitter landed. `video_merger.py` was removed when the native merger landed. When Separate A/V eventually goes native, the Scripts directory and all Python dependencies can be deleted entirely.
-
-The surviving script shares the same IPC pattern established by its predecessors: read JSON config from stdin, emit JSON event lines to stdout. It uses `ProcessPoolExecutor` for parallel per-file processing.
+- **`Services/Separate/*`**: Supporting types for the separator pipeline. `CodecNameResolver` is a pure static FourCC mapping (shared with `VideoProber`). `VideoStreamExtractor` and `AudioStreamExtractor` are actors.
 
 ## Runtime Dependencies
 
