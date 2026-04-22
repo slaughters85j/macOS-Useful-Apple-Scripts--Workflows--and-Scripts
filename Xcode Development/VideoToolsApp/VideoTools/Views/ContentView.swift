@@ -3,25 +3,38 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(AppState.self) private var appState
-    
+    @Environment(MediaPlayerManager.self) private var playerManager
+
     var body: some View {
         @Bindable var state = appState
-        
+
         VStack(spacing: 0) {
             headerView
-            
+
             Divider()
-            
-            HSplitView {
-                fileListView
-                    .frame(minWidth: 280, idealWidth: 320)
-                
-                settingsView
-                    .frame(minWidth: 300, idealWidth: 380)
+
+            // Content area — main tools + optional media player sidebar
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    // Main content
+                    mainContentView
+                        .frame(width: appState.isMediaPlayerVisible
+                            ? geo.size.width * 0.25
+                            : geo.size.width)
+
+                    // Media player sidebar (75% of content area)
+                    if appState.isMediaPlayerVisible {
+                        Divider()
+                        MediaPlayerView()
+                            .frame(width: geo.size.width * 0.75)
+                            .transition(.move(edge: .trailing))
+                    }
+                }
+                .animation(.easeInOut(duration: 0.25), value: appState.isMediaPlayerVisible)
             }
-            
+
             Divider()
-            
+
             footerView
         }
         .frame(minWidth: 750, minHeight: 550)
@@ -33,6 +46,51 @@ struct ContentView: View {
         ) { result in
             if case .success(let urls) = result {
                 appState.addFiles(urls: urls)
+            }
+        }
+        .onChange(of: playerManager.currentFile?.id) { _, newValue in
+            if newValue != nil {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    appState.isMediaPlayerVisible = true
+                }
+            }
+        }
+        .onChange(of: appState.isMediaPlayerVisible) { _, isVisible in
+            if !isVisible {
+                playerManager.stop()
+            }
+        }
+        .onChange(of: appState.videoFiles) { _, newFiles in
+            playerManager.updatePlaylist(newFiles)
+        }
+        .onChange(of: appState.selectedMode) { _, _ in
+            if appState.isMediaPlayerVisible {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    appState.isMediaPlayerVisible = false
+                }
+            }
+        }
+    }
+
+    // MARK: - Main Content
+
+    private var mainContentView: some View {
+        Group {
+            if appState.selectedMode == .mediaPlayer {
+                VStack(spacing: 0) {
+                    videoFileListHeader
+                    Divider()
+                    FileDropZone()
+                }
+                .background(.background.secondary)
+            } else {
+                HSplitView {
+                    fileListView
+                        .frame(minWidth: 280, idealWidth: 320)
+
+                    settingsView
+                        .frame(minWidth: 300, idealWidth: 380)
+                }
             }
         }
     }
@@ -72,7 +130,33 @@ struct ContentView: View {
                 }
             }
 
+            Divider()
+                .frame(height: 24)
+
+            // Playback group
+            ForEach(ToolMode.allCases.filter { $0.group == .playback }) { mode in
+                ModeButton(mode: mode, isSelected: appState.selectedMode == mode) {
+                    withAnimation(.smooth(duration: 0.2)) {
+                        appState.selectedMode = mode
+                    }
+                }
+            }
+
             Spacer()
+
+            // Media player sidebar toggle
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    appState.isMediaPlayerVisible.toggle()
+                }
+            } label: {
+                Image(systemName: appState.isMediaPlayerVisible
+                    ? "sidebar.trailing"
+                    : "play.rectangle")
+                    .foregroundStyle(appState.isMediaPlayerVisible ? .primary : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(appState.isMediaPlayerVisible ? "Hide media player" : "Show media player")
 
             Text("Video Tools")
                 .font(.headline)
@@ -85,7 +169,7 @@ struct ContentView: View {
     private var fileListView: some View {
         VStack(spacing: 0) {
             switch appState.selectedMode {
-            case .split, .separate, .gif, .merge:
+            case .split, .separate, .gif, .merge, .mediaPlayer:
                 videoFileListHeader
                 Divider()
                 FileDropZone()
@@ -197,6 +281,8 @@ struct ContentView: View {
                     RenameSettingsView(mode: appState.selectedMode)
                 case .metadata:
                     MetadataSettingsView()
+                case .mediaPlayer:
+                    EmptyView()
                 }
             }
             .padding()
@@ -223,7 +309,7 @@ struct ContentView: View {
         switch appState.processingStatus {
         case .idle:
             switch appState.selectedMode {
-            case .split, .separate, .gif, .merge:
+            case .split, .separate, .gif, .merge, .mediaPlayer:
                 Label("\(appState.videoFiles.count) file(s) selected", systemImage: "film")
                     .foregroundStyle(.secondary)
             case .renameVideos, .renamePhotos:
@@ -256,6 +342,7 @@ struct ContentView: View {
                 .foregroundStyle(.red)
         }
     }
+
 }
 
 struct ModeButton: View {
@@ -282,4 +369,5 @@ struct ModeButton: View {
 #Preview {
     ContentView()
         .environment(AppState())
+        .environment(MediaPlayerManager())
 }

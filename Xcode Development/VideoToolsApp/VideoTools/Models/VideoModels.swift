@@ -7,6 +7,7 @@ enum ToolModeGroup: String, CaseIterable {
     case videoProcessing = "Video Processing"
     case fileManagement = "File Management"
     case inspection = "Inspection"
+    case playback = "Playback"
 }
 
 enum ToolMode: String, CaseIterable, Identifiable {
@@ -17,6 +18,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
     case renameVideos = "Rename Videos"
     case renamePhotos = "Rename Photos"
     case metadata = "Metadata"
+    case mediaPlayer = "Player"
 
     var id: String { rawValue }
 
@@ -29,6 +31,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
         case .renameVideos: return "film.stack"
         case .renamePhotos: return "photo.stack"
         case .metadata: return "info.circle"
+        case .mediaPlayer: return "play.circle"
         }
     }
 
@@ -41,6 +44,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
         case .renameVideos: return "Batch rename video files using folder name prefix"
         case .renamePhotos: return "Batch rename image files using folder name prefix"
         case .metadata: return "Inspect detailed video metadata"
+        case .mediaPlayer: return "Play and preview media files"
         }
     }
 
@@ -49,6 +53,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
         case .split, .separate, .gif, .merge: return .videoProcessing
         case .renameVideos, .renamePhotos: return .fileManagement
         case .metadata: return .inspection
+        case .mediaPlayer: return .playback
         }
     }
 
@@ -61,7 +66,7 @@ enum ToolMode: String, CaseIterable, Identifiable {
 
     var isProcessable: Bool {
         switch self {
-        case .metadata: return false
+        case .metadata, .mediaPlayer: return false
         default: return true
         }
     }

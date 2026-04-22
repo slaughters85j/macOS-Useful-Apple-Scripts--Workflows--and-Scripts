@@ -12,13 +12,21 @@
 		<data>
 		sq90DwiwnD6r6G0ew+S6RdrUtm4=
 		</data>
+		<key>Resources/CLAUDE.md</key>
+		<data>
+		1XIaXMePQh+vXFeI9AGfxZfuLog=
+		</data>
 		<key>Resources/video_audio_separator_batch.py</key>
 		<data>
-		DLwmqau5hB214VfzZrrqjrrmDcY=
+		ZGRUZnhzapr5PoAWiHhOEtP8/4s=
+		</data>
+		<key>Resources/video_merger.py</key>
+		<data>
+		nhXIfmUlKzyVH641BdMUYCpL4Ig=
 		</data>
 		<key>Resources/video_splitter_batch.py</key>
 		<data>
-		b48FG4WOL+CkTSvSZXzPZib8ukw=
+		fNpvXmIsi8+RzJprd6hcIvwwLjc=
 		</data>
 		<key>Resources/video_to_gif.cpython-314.pyc</key>
 		<data>
@@ -26,11 +34,29 @@
 		</data>
 		<key>Resources/video_to_gif.py</key>
 		<data>
-		HqmTyf/lOzRzD7knmNXWsi5s0aE=
+		UjU2waChoJFusNpA5gMSZU7hyu8=
 		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>MacOS/VideoTools.debug.dylib</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			KVIQfDIeJr2Fi4jOmQPCRb2i4SU=
+			</data>
+			<key>requirement</key>
+			<string>identifier "VideoTools.debug" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: John Saunders (NCVAUFTZST)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */</string>
+		</dict>
+		<key>MacOS/__preview.dylib</key>
+		<dict>
+			<key>cdhash</key>
+			<data>
+			hXvG31KwT9NY+ySdD900OstVyy8=
+			</data>
+			<key>requirement</key>
+			<string>identifier "__preview" and anchor apple generic and certificate leaf[subject.CN] = "Apple Development: John Saunders (NCVAUFTZST)" and certificate 1[field.1.2.840.113635.100.6.2.1] /* exists */</string>
+		</dict>
 		<key>Resources/AppIcon.icns</key>
 		<dict>
 			<key>hash2</key>
@@ -45,18 +71,32 @@
 			69E0iPB3XtHYpIA6Ppj//exO/Y/iC7ZPGuc2n/PgfcY=
 			</data>
 		</dict>
+		<key>Resources/CLAUDE.md</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			ZKB8IpnkKU1DYBAIeOSOuTKt9/Ykp5wcxmkQTwt6PuQ=
+			</data>
+		</dict>
 		<key>Resources/video_audio_separator_batch.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			5eZIEs7z0mthg6hq5NKek2Huv6IoDhEbZnXuK0vmObs=
+			PQJ7Cgr2sUKRYoVnliFOMZGpJAr1giU3TgHXrn6ZICA=
+			</data>
+		</dict>
+		<key>Resources/video_merger.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			FOMOzYIJ62qheHYHPzVYX9AAKKKAn+B0VsXLv2Dotq4=
 			</data>
 		</dict>
 		<key>Resources/video_splitter_batch.py</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			PVPveOrJXjJC8s7siNR3c2z/k2zGtBRxCi1VsKqwrpE=
+			ADJzbtmcXxCy934JuMr6uIUJJSON09dV8zzxbrVOcBQ=
 			</data>
 		</dict>
 		<key>Resources/video_to_gif.cpython-314.pyc</key>
@@ -70,7 +110,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			pQB8cHcOTeMclorZ+fWzsMX24Ysxxl8/I4cdjA0aZYk=
+			bKn/+I7xCSmhzpX59sOFzzulaoSlQHPI2HopoAcKZ8o=
 			</data>
 		</dict>
 	</dict>
